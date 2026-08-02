@@ -70,6 +70,89 @@ Notification (no `id`):
    `--edw-lifetime=coupled` exits the host when the client disconnects (and kills
    BEAM when the host exits in packaged mode).
 
+## Behavioral semantics
+
+These rules are normative for every platform host. If macOS behavior and this
+section disagree, **fix the host** and keep this section as the contract.
+
+### Resource ids
+
+- Opaque strings assigned by the host (e.g. `w1`, `v2`, `m3`). Clients treat them
+  as opaque; do not encode platform pointers in the id string for the wire.
+- One TCP connection owns many windows / webviews / menus / trays / icons /
+  notifications. Do not require one process per window.
+
+### `initialize` and reconnect
+
+- After TCP accept, the first production call MUST be `initialize`. Other methods
+  → `-32001`.
+- On **reconnect** lifetime, when the client disconnects the host **keeps
+  listening**. Native windows may remain visible. When a new client connects it
+  MUST call `initialize` again. The host MAY reset RPC session state (pending
+  request ids); it SHOULD keep existing window/webview resources addressable by
+  the same ids until the client destroys them (macOS currently keeps them).
+- On **coupled** lifetime, client disconnect terminates the host; host exit
+  terminates the BEAM child if the host spawned it.
+
+### Window close policy
+
+- User/OS attempt to close a window MUST be **vetoed** by the native layer.
+- Host emits `event.window.close_requested` with `window_id`.
+- Host does **not** destroy the window until Elixir calls `window.close` /
+  `window.destroy` (or the process exits).
+- `window.close_veto` acknowledges the veto path for backends that need an
+  explicit “we handled it” RPC; hosts may treat it as a no-op success.
+- Elixir / `Desktop.Window` decides quit vs hide; the host must not call
+  `exit` solely because the last window received a close click.
+
+### Webview navigation
+
+- `webview.load_url` loads the given URL in that webview.
+- Attempts to open a **new window** / target=_blank SHOULD emit
+  `event.webview.new_window` and open the URL via the OS default handler
+  (`system.open_url` behavior), not create an unmanaged native window.
+- Context menu: default **disabled** after create; `webview.set_context_menu`
+  toggles when the engine allows.
+- `webview.rebuild` replaces the engine view inside the same window and returns
+  a **new** `webview_id` (old id becomes invalid).
+
+### Menus and tray
+
+- `menu.create` / `menu.update` take a full DOM snapshot (not incremental diffs).
+- Item activation → `event.menu.click` with the `onclick` attribute string from
+  the DOM (may be empty).
+- Tray is a status/notification-area icon with an optional menu.
+  `event.tray.click` is for icon clicks that are not menu item selections.
+- `menu.set_apple` is macOS-specific. On other platforms return `true` (no-op).
+
+### Notifications and icons
+
+- `icon.create` accepts filesystem `path` and/or `png_base64`. Empty params MAY
+  create a placeholder icon so callers can proceed.
+- `notification.show` should use the platform notification center when running
+  as a real packaged app. CLI / unpackaged helpers MAY log and still return a
+  `notification_id` (E2E must not require a visible banner).
+
+### Permissions (hybrid)
+
+Applies to getUserMedia-style camera/microphone (and equivalents):
+
+1. Host checks `system.set_permission_policy` for `{origin, type}`.
+2. `allow` / `deny` → answer the engine without prompting Elixir (OS permission
+   dialogs such as TCC / Windows privacy may still appear).
+3. `ask` (default) → host sends JSON-RPC **request** `permission.request`;
+   client replies `{ "decision": "allow"|"deny"|"ask" }`. A nested `ask` means
+   use the engine/OS prompt.
+4. `test.permission.simulate` (test RPC only) synthesizes a `permission.request`
+   without requiring real device hardware — required for CI.
+
+Platform packaging notes (usage strings, manifests) live in [packaging.md](packaging.md).
+
+### Single client
+
+Hosts MAY accept only one concurrent TCP client (macOS does). A new connection
+MAY replace the previous one; document if you support multiple clients.
+
 ## Production methods
 
 ### `initialize`

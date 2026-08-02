@@ -21,6 +21,7 @@ defmodule DesktopWebview.MixProject do
         extras: [
           "README.md",
           "docs/protocol.md",
+          "docs/porting.md",
           "docs/packaging.md",
           "docs/desktop-integration.md",
           "docs/status/macos.md",

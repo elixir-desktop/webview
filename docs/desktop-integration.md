@@ -53,4 +53,8 @@ DesktopWebview.Backend.capabilities()
 
 Hybrid policy (see `docs/protocol.md`): set defaults with
 `system.set_permission_policy`, handle inbound `permission.request` RPC, and still
-satisfy OS TCC via Info.plist usage strings.
+satisfy OS privacy prompts. Platform packaging notes are in `docs/packaging.md`.
+
+## Porting another OS
+
+See [docs/porting.md](porting.md).

@@ -47,8 +47,9 @@ See [docs/packaging.md](docs/packaging.md).
 
 ## Documentation
 
-- [Protocol](docs/protocol.md) — framing, methods, test-only RPC
-- [Packaging](docs/packaging.md) — ini, argv, lifetime, binaries
+- [Protocol](docs/protocol.md) — framing, methods, behavioral semantics, test RPC
+- [Porting](docs/porting.md) — checklist for Windows / Linux hosts
+- [Packaging](docs/packaging.md) — ini, argv, layouts, binaries
 - [Desktop integration](docs/desktop-integration.md)
 - [AGENTS.md](AGENTS.md) — contributor / agent rules
 

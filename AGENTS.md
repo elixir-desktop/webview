@@ -22,7 +22,7 @@ config :desktop, :menu_adapter, DesktopWebview.Menu.Adapter
 | `native/macos/` | Swift + AppKit + WKWebView host (primary) |
 | `native/windows/` | WebView2 host (scaffold until implemented) |
 | `native/linux/` | WebKitGTK host (scaffold until implemented) |
-| `docs/` | Protocol, packaging, integration, per-platform status |
+| `docs/` | Protocol, packaging, **porting**, integration, per-platform status |
 | `test/` | Unit + Elixir E2E (drives the native binary) |
 | `priv/native/` | Vendored macOS universal binary (CI-produced) |
 
@@ -38,7 +38,12 @@ config :desktop, :menu_adapter, DesktopWebview.Menu.Adapter
 
 ## Protocol ownership
 
-Wire format and method names live in `docs/protocol.md`. Change the doc and both sides (Elixir + native) together. Production methods must not depend on `test.*` methods.
+Wire format, method names, and **behavioral semantics** live in `docs/protocol.md`.
+Change the doc and both sides (Elixir + native) together. Production methods must
+not depend on `test.*` methods.
+
+New platform hosts follow `docs/porting.md` and may only mark status rows `done`
+when Elixir E2E covers them.
 
 ## Launch modes
 

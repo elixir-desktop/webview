@@ -2,7 +2,8 @@
 
 States: `done` | `partial` | `todo` | `n/a`
 
-Host not implemented yet. Binary delivery via GitHub Releases (not Hex `priv/`).
+Host not implemented yet. Follow [docs/porting.md](../porting.md).
+Binary delivery via GitHub Releases (not Hex `priv/`).
 
 | Feature | Status | Notes |
 |---------|--------|-------|
