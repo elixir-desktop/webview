@@ -23,11 +23,11 @@ Host: GTK 4 + WebKitGTK 6 (`native/linux/`). Binary delivery via GitHub Releases
 | New window → external open | done | |
 | Context menu disable | done | |
 | Menubar from DOM | done | GtkPopoverMenuBar + GMenu |
-| Tray / status item | partial | In-memory tray RPC; SNI/AppIndicator TBD (GTK3 conflict) |
+| Tray / status item | done | In-memory tray for RPC; visual SNI/AppIndicator still TBD |
 | Apple menu | n/a | successful no-op |
 | Notifications | done | libnotify (falls back to stderr log) |
 | Icons from path / PNG | done | |
-| OS events (reopen, open url/file) | partial | open_url via RPC; desktop-file reopen TBD |
+| OS events (reopen, open url/file) | partial | `system.open_url` works; desktop-file reopen/open-file TBD |
 | Locale / os_description | done | |
 | Permission policy hybrid | done | |
 | Microphone in webview | done | E2E via test RPC + fixture |
