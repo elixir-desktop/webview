@@ -7,7 +7,10 @@ defmodule DesktopWebview.E2ETest do
 
   setup do
     unless Binary.available?() do
-      flunk("DesktopWebView binary missing at #{Binary.path()}; run ./scripts/build_macos.sh")
+      flunk(
+        "DesktopWebView binary missing at #{Binary.path()}; " <>
+          "run ./scripts/build_macos.sh or ./scripts/build_linux.sh"
+      )
     end
 
     {:ok, launcher} = Launcher.start(test_rpc: true, lifetime: :reconnect)
@@ -30,11 +33,19 @@ defmodule DesktopWebview.E2ETest do
     {:ok, _} = Transport.start_link([])
     assert {:ok, caps} = Transport.connect("127.0.0.1", launcher.listen_port)
     assert caps["protocol_version"] == 1
-    assert caps["platform"] == "macos"
+
+    expected_platform =
+      case :os.type() do
+        {:unix, :darwin} -> "macos"
+        {:win32, _} -> "windows"
+        {:unix, _} -> "linux"
+      end
+
+    assert caps["platform"] == expected_platform
 
     Transport.set_permission_handler(fn _ -> "allow" end)
 
-    %{launcher: launcher, caps: caps}
+    %{launcher: launcher, caps: caps, platform: expected_platform}
   end
 
   test "test.ping" do
@@ -150,11 +161,16 @@ defmodule DesktopWebview.E2ETest do
     assert result == "EDW Media Fixture" or is_binary(result)
   end
 
-  test "system locale and os_description" do
+  test "system locale and os_description", %{platform: platform} do
     assert {:ok, loc} = Transport.call("system.locale", %{})
     assert is_binary(loc)
     assert {:ok, desc} = Transport.call("system.os_description", %{})
-    assert desc =~ "macOS"
+
+    case platform do
+      "macos" -> assert desc =~ "macOS"
+      "linux" -> assert desc =~ "Linux"
+      "windows" -> assert desc =~ "Windows"
+    end
   end
 
   test "multi-window" do

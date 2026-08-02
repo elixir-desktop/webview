@@ -34,5 +34,32 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+  linux:
+    name: Linux x86_64 artifact
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install GTK / WebKitGTK
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y \
+            build-essential cmake pkg-config \
+            libgtk-4-dev libwebkitgtk-6.0-dev \
+            libnotify-dev libjson-glib-dev
+      - name: Build host
+        run: ./scripts/build_linux.sh
+      - name: Pack
+        run: |
+          mkdir -p dist
+          cp priv/native/linux/DesktopWebView dist/DesktopWebView-linux-x86_64
+          sha256sum dist/DesktopWebView-linux-x86_64 > dist/DesktopWebView-linux-x86_64.sha256
+      - uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          files: |
+            dist/DesktopWebView-linux-x86_64
+            dist/DesktopWebView-linux-x86_64.sha256
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   # windows: add when native/windows host exists — attach DesktopWebView-windows-* to the same draft release
-  # linux:   add when native/linux host exists — attach DesktopWebView-linux-* to the same draft release

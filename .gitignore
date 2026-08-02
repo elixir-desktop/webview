@@ -12,6 +12,8 @@ desktop_webview-*.tar
 *.xcworkspace/xcuserdata/
 native/macos/.build/
 native/macos/Package.resolved
+native/linux/build/
 priv/native/macos/DesktopWebView
+priv/native/linux/DesktopWebView
 .DS_Store
 *.swp

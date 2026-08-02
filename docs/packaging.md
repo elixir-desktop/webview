@@ -71,7 +71,10 @@ MyApp/
 - Release asset name: `DesktopWebView-linux-x86_64`.
 - Prefer shipping against a documented WebKitGTK/GTK baseline (note distro
   packages in `native/linux/README.md`).
-- Tray: StatusNotifierItem when available.
+  Ubuntu 24.04 baseline: GTK 4.14 + WebKitGTK 2.52 (`libgtk-4-dev`,
+  `libwebkitgtk-6.0-dev`).
+- Tray: StatusNotifierItem when available; current host keeps an in-memory tray
+  for RPC conformance (AppIndicator is GTK 3 and not linked).
 - Microphone / camera: PipeWire/Pulse + portal prompts may appear; hybrid
   permission policy still applies. Flatpak/snap portals need extra packaging
   notes when those formats are supported.

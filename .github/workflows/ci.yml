@@ -49,3 +49,35 @@ jobs:
       - run: mix test
         env:
           DESKTOP_WEBVIEW_BINARY: ${{ github.workspace }}/priv/native/macos/DesktopWebView
+
+  linux-e2e:
+    name: Linux host + E2E
+    runs-on: ubuntu-latest
+    env:
+      NO_WX: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: "26"
+          elixir-version: "1.18"
+      - name: Checkout desktop (path dep)
+        uses: actions/checkout@v4
+        with:
+          repository: elixir-desktop/desktop
+          path: desktop
+      - name: Install GTK / WebKitGTK
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y \
+            build-essential cmake pkg-config \
+            libgtk-4-dev libwebkitgtk-6.0-dev \
+            libnotify-dev libjson-glib-dev \
+            xvfb
+      - name: Build host
+        run: ./scripts/build_linux.sh
+      - run: mix deps.get
+      - name: E2E under Xvfb
+        run: xvfb-run -a mix test
+        env:
+          DESKTOP_WEBVIEW_BINARY: ${{ github.workspace }}/priv/native/linux/DesktopWebView
