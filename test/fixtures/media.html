@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>EDW Media Fixture</title>
+  </head>
+  <body>
+    <h1>Media fixture</h1>
+    <p id="status">ready</p>
+    <script>
+      window.__edw = { mic: null, cam: null };
+      // Real getUserMedia may be blocked without TCC in CI; E2E uses test.permission.simulate.
+      async function tryMedia() {
+        try {
+          if (!navigator.mediaDevices) {
+            document.getElementById("status").textContent = "no-mediaDevices";
+            return;
+          }
+          const stream = await navigator.mediaDevices.getUserMedia({
+            audio: true,
+            video: true
+          });
+          window.__edw.mic = stream.getAudioTracks().length > 0;
+          window.__edw.cam = stream.getVideoTracks().length > 0;
+          document.getElementById("status").textContent = "granted";
+        } catch (e) {
+          document.getElementById("status").textContent = "error:" + e.name;
+        }
+      }
+      // Do not auto-call getUserMedia in CI; keep for manual runs.
+    </script>
+  </body>
+</html>

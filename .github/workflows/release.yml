@@ -1,0 +1,38 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  macos:
+    name: macOS universal artifact
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build universal host
+        run: ./scripts/build_macos.sh
+      - name: Ad-hoc sign
+        run: codesign -s - --force --deep priv/native/macos/DesktopWebView
+      - name: Pack
+        run: |
+          mkdir -p dist
+          cp priv/native/macos/DesktopWebView dist/DesktopWebView-macos-universal
+          shasum -a 256 dist/DesktopWebView-macos-universal > dist/DesktopWebView-macos-universal.sha256
+          # Also stage into priv for Hex packaging workflows
+          mkdir -p priv/native/macos
+          cp dist/DesktopWebView-macos-universal priv/native/macos/DesktopWebView
+      - uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          files: |
+            dist/DesktopWebView-macos-universal
+            dist/DesktopWebView-macos-universal.sha256
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # windows: add when native/windows host exists — attach DesktopWebView-windows-* to the same draft release
+  # linux:   add when native/linux host exists — attach DesktopWebView-linux-* to the same draft release

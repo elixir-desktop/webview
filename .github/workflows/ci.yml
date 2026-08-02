@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  elixir:
+    name: Elixir unit
+    runs-on: ubuntu-latest
+    env:
+      NO_WX: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: "26"
+          elixir-version: "1.18"
+      - name: Checkout desktop (path dep)
+        uses: actions/checkout@v4
+        with:
+          repository: elixir-desktop/desktop
+          path: desktop
+      - run: mix deps.get
+      - run: mix test --exclude e2e
+
+  macos-e2e:
+    name: macOS host + E2E
+    runs-on: macos-latest
+    env:
+      NO_WX: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: "26"
+          elixir-version: "1.18"
+      - name: Checkout desktop (path dep)
+        uses: actions/checkout@v4
+        with:
+          repository: elixir-desktop/desktop
+          path: desktop
+      - name: Build host
+        run: ./scripts/build_macos.sh
+      - name: Ad-hoc sign
+        run: codesign -s - --force --deep priv/native/macos/DesktopWebView || true
+      - run: mix deps.get
+      - run: mix test
+        env:
+          DESKTOP_WEBVIEW_BINARY: ${{ github.workspace }}/priv/native/macos/DesktopWebView

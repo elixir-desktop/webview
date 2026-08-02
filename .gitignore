@@ -1,0 +1,17 @@
+/_build/
+/cover/
+/deps/
+/.fetch
+erl_crash.dump
+*.ez
+desktop_webview-*.tar
+/doc/
+.elixir_ls/
+.idea/
+*.xcodeproj/xcuserdata/
+*.xcworkspace/xcuserdata/
+native/macos/.build/
+native/macos/Package.resolved
+priv/native/macos/DesktopWebView
+.DS_Store
+*.swp
