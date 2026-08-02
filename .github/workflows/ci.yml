@@ -83,4 +83,5 @@ jobs:
           DESKTOP_WEBVIEW_BINARY: ${{ github.workspace }}/priv/native/linux/DesktopWebView
           WEBKIT_DISABLE_COMPOSITING_MODE: "1"
           WEBKIT_DISABLE_DMABUF_RENDERER: "1"
+          WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS: "1"
           LIBGL_ALWAYS_SOFTWARE: "1"

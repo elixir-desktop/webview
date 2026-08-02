@@ -64,11 +64,11 @@ defmodule DesktopWebview.E2ETest do
                "height" => 480
              })
 
-    html = Path.expand("test/fixtures/media.html")
-    url = "file://" <> html
+    html = File.read!(Path.expand("test/fixtures/media.html"))
+    url = "data:text/html;charset=utf-8," <> URI.encode(html)
 
     assert {:ok, true} = Transport.call("webview.load_url", %{"webview_id" => vid, "url" => url})
-    # Give WKWebView a moment
+    # Give the engine a moment
     Process.sleep(500)
 
     assert {:ok, true} = Transport.call("webview.reload", %{"webview_id" => vid})
@@ -134,9 +134,11 @@ defmodule DesktopWebview.E2ETest do
     assert {:ok, %{"window_id" => _wid, "webview_id" => vid}} =
              Transport.call("window.open", %{"title" => "Media", "width" => 400, "height" => 300})
 
-    html = Path.expand("test/fixtures/media.html")
+    html = File.read!(Path.expand("test/fixtures/media.html"))
+    url = "data:text/html;charset=utf-8," <> URI.encode(html)
+
     assert {:ok, true} =
-             Transport.call("webview.load_url", %{"webview_id" => vid, "url" => "file://" <> html})
+             Transport.call("webview.load_url", %{"webview_id" => vid, "url" => url})
 
     Process.sleep(400)
 
