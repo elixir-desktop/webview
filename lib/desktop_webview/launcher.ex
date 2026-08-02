@@ -40,7 +40,10 @@ defmodule DesktopWebview.Launcher do
 
       case await_listening(port, Keyword.get(opts, :timeout, 10_000)) do
         {:ok, listen_port} ->
-          {:ok, %{port: port, listen_port: listen_port, binary: binary}}
+          # Keep draining host stdout/stderr so WebKit logs cannot fill the pipe.
+          drain_pid = spawn_link(fn -> drain_port(port) end)
+          true = Port.connect(port, drain_pid)
+          {:ok, %{port: port, listen_port: listen_port, binary: binary, drain_pid: drain_pid}}
 
         {:error, reason} ->
           Port.close(port)
@@ -49,7 +52,12 @@ defmodule DesktopWebview.Launcher do
     end
   end
 
-  def stop(%{port: port}) when is_port(port) do
+  def stop(%{port: port} = launcher) when is_port(port) do
+    if pid = Map.get(launcher, :drain_pid) do
+      Process.unlink(pid)
+      Process.exit(pid, :kill)
+    end
+
     try do
       case Port.info(port) do
         nil -> :ok
@@ -99,6 +107,13 @@ defmodule DesktopWebview.Launcher do
         200 ->
           do_await(port, acc, deadline)
       end
+    end
+  end
+
+  defp drain_port(port) do
+    receive do
+      {^port, {:data, _}} -> drain_port(port)
+      {^port, {:exit_status, _}} -> :ok
     end
   end
 end

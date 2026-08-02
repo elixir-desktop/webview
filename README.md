@@ -12,7 +12,7 @@ spawns the BEAM release; in development an existing BEAM can launch the host wit
 |----------|--------|--------|
 | macOS | WKWebView | Primary — see [docs/status/macos.md](docs/status/macos.md) |
 | Windows | WebView2 | Planned — [docs/status/windows.md](docs/status/windows.md) |
-| Linux | WebKitGTK | Planned — [docs/status/linux.md](docs/status/linux.md) |
+| Linux | WebKitGTK | Usable — [docs/status/linux.md](docs/status/linux.md) |
 
 ## Quick start (development)
 
@@ -25,10 +25,11 @@ config :desktop, :backend, DesktopWebview.Backend
 config :desktop, :menu_adapter, DesktopWebview.Menu.Adapter
 ```
 
-Build the macOS host (or use the vendored binary under `priv/native/macos/`):
+Build the native host for your OS (or use a vendored/CI binary):
 
 ```bash
-./scripts/build_macos.sh
+./scripts/build_macos.sh   # macOS → priv/native/macos/DesktopWebView
+./scripts/build_linux.sh   # Linux → priv/native/linux/DesktopWebView
 mix test          # unit
 mix test.e2e      # needs host binary; starts with --edw-test-rpc
 ```
