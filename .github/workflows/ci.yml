@@ -73,11 +73,14 @@ jobs:
             build-essential cmake pkg-config \
             libgtk-4-dev libwebkitgtk-6.0-dev \
             libnotify-dev libjson-glib-dev \
-            xvfb
+            xvfb dbus-x11
       - name: Build host
         run: ./scripts/build_linux.sh
       - run: mix deps.get
       - name: E2E under Xvfb
-        run: xvfb-run -a mix test
+        run: dbus-run-session -- xvfb-run -a mix test
         env:
           DESKTOP_WEBVIEW_BINARY: ${{ github.workspace }}/priv/native/linux/DesktopWebView
+          WEBKIT_DISABLE_COMPOSITING_MODE: "1"
+          WEBKIT_DISABLE_DMABUF_RENDERER: "1"
+          LIBGL_ALWAYS_SOFTWARE: "1"

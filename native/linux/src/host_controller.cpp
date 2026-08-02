@@ -2,6 +2,8 @@
 
 #include "json_util.hpp"
 
+#include <webkit/webkit.h>
+
 #include <cctype>
 #include <clocale>
 #include <cstdio>
@@ -55,6 +57,21 @@ HostController::~HostController() {
 
 bool HostController::start() {
   notify_init("DesktopWebView");
+
+  // WebKitGTK sandboxes the network/web process. Paths must be allowlisted
+  // BEFORE any subprocess is spawned (creating/loading a WebView). Broad
+  // roots like "/" are rejected by WebKit; allow the process cwd and the
+  // host binary directory (packaged resources / local fixtures).
+  {
+    WebKitWebContext* ctx = webkit_web_context_get_default();
+    gchar* cwd = g_get_current_dir();
+    if (cwd) {
+      webkit_web_context_add_path_to_sandbox(ctx, cwd, TRUE);
+      g_free(cwd);
+    }
+    auto root = config_.resources_root();
+    if (!root.empty()) webkit_web_context_add_path_to_sandbox(ctx, root.c_str(), TRUE);
+  }
 
   server_.set_request_handler([this](JsonNode* id, const std::string& method, JsonNode* params,
                                      RpcServer::ReplyFn reply) {

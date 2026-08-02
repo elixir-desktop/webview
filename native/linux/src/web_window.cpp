@@ -81,6 +81,10 @@ WebWindow::~WebWindow() {
 
 void WebWindow::create_webview() {
   webview_ = WEBKIT_WEB_VIEW(webkit_web_view_new());
+  WebKitSettings* settings = webkit_web_view_get_settings(webview_);
+  // Avoid GPU/compositor crashes under Xvfb / CI.
+  webkit_settings_set_hardware_acceleration_policy(settings,
+                                                   WEBKIT_HARDWARE_ACCELERATION_POLICY_NEVER);
   gtk_widget_set_hexpand(GTK_WIDGET(webview_), TRUE);
   gtk_widget_set_vexpand(GTK_WIDGET(webview_), TRUE);
   gtk_box_append(root_, GTK_WIDGET(webview_));
