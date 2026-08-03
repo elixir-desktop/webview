@@ -341,8 +341,17 @@ defmodule DesktopWebview.Backend do
 
   @impl true
   def put_webview_backend(name) do
-    if Process.whereis(Desktop.Env) do
-      Desktop.Env.put(:webview_backend, name)
+    # Desktop.Env.init/1 calls init_env/0, so a sync GenServer.call here would be a
+    # self-call. Defer when we are still inside Env.init.
+    case Process.whereis(Desktop.Env) do
+      nil ->
+        :ok
+
+      pid when pid == self() ->
+        spawn(fn -> Desktop.Env.put(:webview_backend, name) end)
+
+      _pid ->
+        Desktop.Env.put(:webview_backend, name)
     end
 
     :ok
