@@ -17,6 +17,9 @@ final class HostController: NSObject {
     private var permissionPolicy: [String: [String: String]] = [:] // origin -> type -> allow|deny|ask
     private var beamProcess: Process?
     private var appleMenuSet = false
+    /// Display name for the macOS application menu (e.g. "Diode Collab").
+    private var appDisplayName = "DesktopWebView"
+    private var appleMenuItem: NSMenuItem?
     /// True after the user/OS asked to quit; BEAM is expected to shut down next.
     private(set) var quitRequested = false
     /// When true, `applicationShouldTerminate` may finish tearing down the host.
@@ -262,8 +265,15 @@ final class HostController: NSObject {
         case "window.set_menubar":
             let w = try win(params)
             if let menuId = params?["menu_id"]?.stringValue, let menu = menus[menuId] {
-                // Convert popup-style menu into menubar if needed
+                // AppKit always titles the *first* main-menu item with the process
+                // name. Keep the application (Apple) menu first, then app menus —
+                // otherwise "Zones" is shown as "DesktopWebView" and a later Apple
+                // insert yields two process-named menus.
                 let bar = NSMenu()
+                if let apple = ensureAppleMenuItem() {
+                    apple.menu?.removeItem(apple)
+                    bar.addItem(apple)
+                }
                 for item in menu.items {
                     bar.addItem(item.copy() as! NSMenuItem)
                 }
@@ -653,23 +663,44 @@ final class HostController: NSObject {
 
     private func setAppleMenu(_ params: JSONValue?) -> JSONValue {
         let name = params?["app_name"]?.stringValue ?? "App"
-        let appMenu = NSMenu()
+        appDisplayName = name
+        // Without an .app bundle, AppKit uses the executable name ("DesktopWebView")
+        // for the application menu title. Align the process name with the product.
+        ProcessInfo.processInfo.processName = name
+
+        _ = ensureAppleMenuItem()
+        installMainMenuPreservingApple(extraItems: Array(NSApp.mainMenu?.items.dropFirst() ?? []))
+        appleMenuSet = true
+        return .bool(true)
+    }
+
+    /// Application menu (About / Quit). Always the first main-menu item on macOS.
+    private func ensureAppleMenuItem() -> NSMenuItem? {
+        let name = appDisplayName
+        let appMenu = NSMenu(title: name)
         appMenu.addItem(withTitle: "About \(name)", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
         appMenu.addItem(NSMenuItem.separator())
         appMenu.addItem(withTitle: "Quit \(name)", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
-        let bar = NSApp.mainMenu ?? NSMenu()
-        if bar.items.first?.submenu == nil || !appleMenuSet {
-            let appItem = NSMenuItem()
-            appItem.submenu = appMenu
-            if bar.items.isEmpty {
-                bar.addItem(appItem)
-            } else {
-                bar.insertItem(appItem, at: 0)
-            }
-            NSApp.mainMenu = bar
-            appleMenuSet = true
+
+        let appItem = appleMenuItem ?? NSMenuItem(title: name, action: nil, keyEquivalent: "")
+        appItem.title = name
+        appItem.submenu = appMenu
+        appleMenuItem = appItem
+        return appItem
+    }
+
+    private func installMainMenuPreservingApple(extraItems: [NSMenuItem]) {
+        let bar = NSMenu()
+        if let apple = ensureAppleMenuItem() {
+            // Detach from previous menu before re-adding.
+            apple.menu?.removeItem(apple)
+            bar.addItem(apple)
         }
-        return .bool(true)
+        for item in extraItems {
+            item.menu?.removeItem(item)
+            bar.addItem(item)
+        }
+        NSApp.mainMenu = bar
     }
 
     private func trayCreate(_ params: JSONValue?) -> JSONValue {
