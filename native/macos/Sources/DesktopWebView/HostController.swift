@@ -13,6 +13,8 @@ final class HostController: NSObject {
     private var menus: [String: NSMenu] = [:]
     private var menuOnclicks: [String: [Int: String]] = [:] // menuId -> tag -> onclick
     private var trays: [String: NSStatusItem] = [:]
+    /// menu_id → tray_id bindings so menu.update reattaches the status item menu.
+    private var trayMenus: [String: String] = [:]
     private var icons: [String: NSImage] = [:]
     private var permissionPolicy: [String: [String: String]] = [:] // origin -> type -> allow|deny|ask
     private var beamProcess: Process?
@@ -349,6 +351,7 @@ final class HostController: NSObject {
             return traySetMenu(params)
         case "tray.destroy":
             if let id = params?["tray_id"]?.stringValue, let item = trays.removeValue(forKey: id) {
+                trayMenus = trayMenus.filter { $0.value != id }
                 NSStatusBar.system.removeStatusItem(item)
             }
             return .bool(true)
@@ -596,6 +599,11 @@ final class HostController: NSObject {
         let menu = buildMenu(dom: params?["dom"], onclicks: &map, menuId: id)
         menus[id] = menu
         menuOnclicks[id] = map
+        // Desktop.Menu mounts with an empty DOM then updates — rebind trays that
+        // still hold the previous NSMenu instance.
+        if let trayId = trayMenus[id], let item = trays[trayId] {
+            item.menu = menu
+        }
         return .bool(true)
     }
 
@@ -711,11 +719,13 @@ final class HostController: NSObject {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         if let iconId = params?["icon_id"]?.stringValue, let img = icons[iconId] {
             item.button?.image = img
+            item.button?.image?.isTemplate = true
         } else {
             item.button?.title = "EDW"
         }
         if let menuId = params?["menu_id"]?.stringValue, let menu = menus[menuId] {
             item.menu = menu
+            trayMenus[menuId] = id
         }
         trays[id] = item
         return .object(["tray_id": .string(id)])
@@ -726,7 +736,9 @@ final class HostController: NSObject {
             return .bool(false)
         }
         if let iconId = params?["icon_id"]?.stringValue, let img = icons[iconId] {
+            img.isTemplate = true
             item.button?.image = img
+            item.button?.title = ""
         }
         return .bool(true)
     }
@@ -737,6 +749,7 @@ final class HostController: NSObject {
         }
         if let menuId = params?["menu_id"]?.stringValue, let menu = menus[menuId] {
             item.menu = menu
+            trayMenus[menuId] = id
         }
         return .bool(true)
     }

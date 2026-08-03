@@ -74,7 +74,7 @@ defmodule DesktopWebview.Menu.Adapter do
           adapter.menubar
 
         _ ->
-          case Transport.call("menu.create", %{"kind" => "menubar", "dom" => json}) do
+          case Transport.call("menu.create", %{"kind" => "popup", "dom" => json}) do
             {:ok, %{"menu_id" => id}} -> {:menu, id}
             _ -> {:menu, nil}
           end
@@ -86,6 +86,17 @@ defmodule DesktopWebview.Menu.Adapter do
 
       _ ->
         :ok
+    end
+
+    # tray.create often runs against an empty first DOM; re-attach after mount/update.
+    if is_binary(adapter.taskbar_icon) do
+      case result do
+        {:menu, id} when is_binary(id) ->
+          _ = Transport.call("tray.set_menu", %{"tray_id" => adapter.taskbar_icon, "menu_id" => id})
+
+        _ ->
+          :ok
+      end
     end
 
     %{adapter | menubar: result, dom: dom}
