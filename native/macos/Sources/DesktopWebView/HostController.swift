@@ -718,7 +718,7 @@ final class HostController: NSObject {
         let id = nextId("tray")
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         if let iconId = params?["icon_id"]?.stringValue, let img = icons[iconId] {
-            item.button?.image = img
+            item.button?.image = prepareTrayImage(img)
         } else {
             item.button?.title = "EDW"
         }
@@ -737,10 +737,20 @@ final class HostController: NSObject {
         if let iconId = params?["icon_id"]?.stringValue, let img = icons[iconId] {
             // Keep full-color app icons (Diode paints status colors into PNGs).
             // Do not set isTemplate — that forces a gray menu-bar silhouette.
-            item.button?.image = img
+            item.button?.image = prepareTrayImage(img)
             item.button?.title = ""
         }
         return .bool(true)
+    }
+
+    /// PNG pixel size becomes NSImage point size by default (e.g. 32pt), which is
+    /// oversized next to other menu-bar icons. Force a status-item scale (~80% of
+    /// bar thickness ≈ 18pt on a 22pt bar).
+    private func prepareTrayImage(_ img: NSImage) -> NSImage {
+        let copy = img.copy() as! NSImage
+        let side = max(14.0, NSStatusBar.system.thickness * 0.8)
+        copy.size = NSSize(width: side, height: side)
+        return copy
     }
 
     private func traySetMenu(_ params: JSONValue?) -> JSONValue {
