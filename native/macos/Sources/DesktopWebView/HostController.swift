@@ -786,7 +786,10 @@ final class HostController: NSObject {
 
     private func iconCreate(_ params: JSONValue?) throws -> JSONValue {
         let id = nextId("icon")
-        if let path = params?["path"]?.stringValue, let img = NSImage(contentsOfFile: path) {
+        if let path = params?["path"]?.stringValue {
+            guard let img = NSImage(contentsOfFile: path) else {
+                throw HostError(-32002, "failed to load icon: \(path)")
+            }
             icons[id] = img
             return .object(["icon_id": .string(id)])
         }

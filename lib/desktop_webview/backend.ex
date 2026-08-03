@@ -415,8 +415,8 @@ defmodule DesktopWebview.Backend do
   # —— Media ——
 
   @impl true
-  def load_image(_app, path) do
-    abs = Path.expand(path)
+  def load_image(app, path) do
+    abs = resolve_priv_path(app, path)
 
     case Transport.call("icon.create", %{"path" => abs}) do
       {:ok, %{"icon_id" => id}} -> {:ok, {:image, id}}
@@ -439,6 +439,22 @@ defmodule DesktopWebview.Backend do
     case Transport.call("icon.create", %{}) do
       {:ok, %{"icon_id" => id}} -> {:ok, {:icon, id}}
       _ -> {:ok, {:icon, "default"}}
+    end
+  end
+
+  defp resolve_priv_path(app, path) when is_binary(path) do
+    expanded = Path.expand(path)
+
+    cond do
+      Path.type(path) == :absolute ->
+        path
+
+      File.exists?(expanded) ->
+        expanded
+
+      true ->
+        # Desktop.Window passes filenames like "diode.png" (same as wx backend).
+        Application.app_dir(app, Path.join("priv", path))
     end
   end
 
