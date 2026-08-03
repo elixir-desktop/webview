@@ -719,7 +719,6 @@ final class HostController: NSObject {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         if let iconId = params?["icon_id"]?.stringValue, let img = icons[iconId] {
             item.button?.image = img
-            item.button?.image?.isTemplate = true
         } else {
             item.button?.title = "EDW"
         }
@@ -736,7 +735,8 @@ final class HostController: NSObject {
             return .bool(false)
         }
         if let iconId = params?["icon_id"]?.stringValue, let img = icons[iconId] {
-            img.isTemplate = true
+            // Keep full-color app icons (Diode paints status colors into PNGs).
+            // Do not set isTemplate — that forces a gray menu-bar silhouette.
             item.button?.image = img
             item.button?.title = ""
         }
