@@ -237,6 +237,17 @@ Events: `event.webview.new_window` (`url`), `event.webview.error`, `event.webvie
 
 Events: `event.menu.click` (`menu_id`, `onclick`), `event.tray.click`.
 
+### Dialog
+
+| Method | Params | Result |
+|--------|--------|--------|
+| `dialog.choose_file` | `title?`, `default_path?` | `{path}` or `null` if cancelled |
+| `dialog.choose_directory` | `title?`, `default_path?` | `{path}` or `null` |
+| `dialog.prompt` | `title`, `message`, `default_value?` | `{value}` or `null` |
+
+macOS: `NSOpenPanel` / `NSAlert`. Linux/Windows: may return error `-32004` until ported.
+AppKit dialogs run on the host main thread and block the RPC until dismissed.
+
 ### Notification / media / system
 
 | Method | Params | Result |

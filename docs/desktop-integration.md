@@ -49,6 +49,32 @@ DesktopWebview.Backend.capabilities()
 # }
 ```
 
+## Event bridge
+
+`DesktopWebview.EventBridge` owns the Transport event subscription when the
+backend is active. It translates host notifications into elixir-desktop messages:
+
+| Host event | Delivery |
+|------------|----------|
+| `event.window.close_requested` | `GenServer.cast(window, :close_window)` |
+| `event.window.focus` | `GenServer.cast(window, :frame_activated)` |
+| `event.system.open_url` | `Desktop.Env.notify_subscribers({:open_url, [url]})` |
+| `event.system.open_file` | `Desktop.Env.notify_subscribers({:open_file, [path]})` |
+| `event.system.reopen` | `{:reopen_app, []}` to `Desktop.Env` |
+| `event.menu.click` | `GenServer.cast(menu, {:trigger_event, onclick})` |
+| `event.webview.new_window` | `system.open_url` (external browser) |
+
+Do **not** subscribe `Desktop.Env` directly to Transport — raw `{:edw_event, ...}`
+messages are not in the Env contract.
+
+## Dialogs
+
+```elixir
+DesktopWebview.Dialog.choose_file(title: "Pick a file", default_path: path)
+DesktopWebview.Dialog.choose_directory(title: "Pick a folder")
+DesktopWebview.Dialog.prompt("Title", "Message", "default")
+```
+
 ## Permissions
 
 Hybrid policy (see `docs/protocol.md`): set defaults with

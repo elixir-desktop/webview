@@ -80,6 +80,14 @@ defmodule DesktopWebview.Menu.Adapter do
           end
       end
 
+    case {result, adapter.menu_pid} do
+      {{:menu, id}, pid} when is_binary(id) and is_pid(pid) ->
+        DesktopWebview.EventBridge.register_menu(id, pid)
+
+      _ ->
+        :ok
+    end
+
     %{adapter | menubar: result, dom: dom}
   end
 
@@ -114,7 +122,9 @@ defmodule DesktopWebview.Menu.Adapter do
   end
 
   def dom_to_json(list) when is_list(list), do: Enum.map(list, &dom_to_json/1)
-  def dom_to_json(other), do: %{"tag" => "unknown", "attrs" => %{}, "children" => [to_string(other)]}
+
+  def dom_to_json(other),
+    do: %{"tag" => "unknown", "attrs" => %{}, "children" => [to_string(other)]}
 
   defp child_text(t) when is_binary(t), do: t
   defp child_text(t), do: to_string(t)
@@ -126,7 +136,9 @@ defmodule DesktopWebview.Menu.Adapter do
     end)
   end
 
-  defp attrs_to_map(attrs) when is_map(attrs), do: Map.new(attrs, fn {k, v} -> {to_string(k), to_string(v)} end)
+  defp attrs_to_map(attrs) when is_map(attrs),
+    do: Map.new(attrs, fn {k, v} -> {to_string(k), to_string(v)} end)
+
   defp attrs_to_map(_), do: %{}
 
   defp icon_id({:icon, id}), do: id

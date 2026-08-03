@@ -63,16 +63,24 @@ defmodule DesktopWebview.Transport do
   def handle_call({:connect, host, port}, _from, state) do
     if state.socket, do: :gen_tcp.close(state.socket)
 
-    case :gen_tcp.connect(String.to_charlist(host), port, [:binary, active: true, packet: 4], 5_000) do
+    case :gen_tcp.connect(
+           String.to_charlist(host),
+           port,
+           [:binary, active: true, packet: 4],
+           5_000
+         ) do
       {:ok, socket} ->
         state = %{state | socket: socket, pending: %{}, initialized: false}
         id = state.next_id
 
         :ok =
-          send_json(socket, Codec.request(id, "initialize", %{
-            "client" => "desktop_webview",
-            "version" => "0.1.0"
-          }))
+          send_json(
+            socket,
+            Codec.request(id, "initialize", %{
+              "client" => "desktop_webview",
+              "version" => "0.1.0"
+            })
+          )
 
         case recv_result(socket, id, 5_000) do
           {:ok, result} ->

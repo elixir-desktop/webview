@@ -10,7 +10,7 @@ defmodule DesktopWebview.Backend do
   @behaviour Desktop.Platform.Media
   @behaviour Desktop.Platform.System
 
-  alias DesktopWebview.{Launcher, Transport}
+  alias DesktopWebview.{EventBridge, Launcher, Transport}
 
   @impl true
   def capabilities do
@@ -28,6 +28,7 @@ defmodule DesktopWebview.Backend do
   @impl true
   def init_env do
     Transport.ensure_started()
+    EventBridge.ensure_started()
 
     case connect_or_launch() do
       :ok ->
@@ -75,7 +76,8 @@ defmodule DesktopWebview.Backend do
 
   @impl true
   def subscribe_events do
-    Transport.subscribe(self())
+    # EventBridge owns the Transport subscription and fans out Env/Window/Menu messages.
+    EventBridge.ensure_started()
     :ok
   end
 
@@ -148,6 +150,7 @@ defmodule DesktopWebview.Backend do
     case Transport.call("window.open", params) do
       {:ok, %{"window_id" => wid, "webview_id" => vid}} ->
         Process.put({:edw_webview, wid}, vid)
+        EventBridge.register_window(wid, self())
         {:ok, wid, vid}
 
       {:ok, other} ->
@@ -165,16 +168,19 @@ defmodule DesktopWebview.Backend do
   end
 
   @impl true
-  def connect(frame, event, fun) do
-    # Store in process dictionary for Env-style fanout; Window GenServer also subscribes.
-    handlers = Process.get({:edw_handlers, frame}, %{})
-    Process.put({:edw_handlers, frame}, Map.put(handlers, event, fun))
+  def connect(frame, _event, _fun) do
+    EventBridge.register_window(frame, self())
     :ok
   end
 
   @impl true
   def show(frame, opts) do
-    _ = Transport.call("window.show", %{"window_id" => frame, "show" => Keyword.get(opts, :show, true)})
+    _ =
+      Transport.call("window.show", %{
+        "window_id" => frame,
+        "show" => Keyword.get(opts, :show, true)
+      })
+
     :ok
   end
 
@@ -192,7 +198,9 @@ defmodule DesktopWebview.Backend do
 
   @impl true
   def set_min_size(frame, {w, h}) do
-    _ = Transport.call("window.set_min_size", %{"window_id" => frame, "width" => w, "height" => h})
+    _ =
+      Transport.call("window.set_min_size", %{"window_id" => frame, "width" => w, "height" => h})
+
     :ok
   end
 
@@ -253,7 +261,10 @@ defmodule DesktopWebview.Backend do
 
   @impl true
   def new_menubar do
-    case Transport.call("menu.create", %{"kind" => "menubar", "dom" => %{"tag" => "menubar", "attrs" => %{}, "children" => []}}) do
+    case Transport.call("menu.create", %{
+           "kind" => "menubar",
+           "dom" => %{"tag" => "menubar", "attrs" => %{}, "children" => []}
+         }) do
       {:ok, %{"menu_id" => id}} -> {:menu, id}
       _ -> {:menu, nil}
     end
@@ -352,27 +363,32 @@ defmodule DesktopWebview.Backend do
   end
 
   def notification_show({:notification, default_title, type}, message, timeout, title) do
-    _ =
-      Transport.call("notification.show", %{
-        "title" => to_string(title || default_title),
-        "message" => to_string(message),
-        "timeout" => timeout,
-        "type" => to_string(type)
-      })
-
-    :ok
+    register_notification_show(%{
+      "title" => to_string(title || default_title),
+      "message" => to_string(message),
+      "timeout" => timeout,
+      "type" => to_string(type)
+    })
   end
 
   def notification_show(id, message, timeout, title) when is_binary(id) do
-    _ =
-      Transport.call("notification.show", %{
-        "id" => id,
-        "title" => to_string(title || ""),
-        "message" => to_string(message),
-        "timeout" => timeout
-      })
+    register_notification_show(%{
+      "id" => id,
+      "title" => to_string(title || ""),
+      "message" => to_string(message),
+      "timeout" => timeout
+    })
+  end
 
-    :ok
+  defp register_notification_show(params) do
+    case Transport.call("notification.show", params) do
+      {:ok, %{"notification_id" => nid}} when is_binary(nid) ->
+        EventBridge.register_notification(nid, self())
+        :ok
+
+      _ ->
+        :ok
+    end
   end
 
   @impl true
@@ -432,6 +448,28 @@ defmodule DesktopWebview.Backend do
   def object_type({:image, _}), do: :wxImage
   def object_type({:icon, _}), do: :wxIcon
   def object_type(_), do: :unknown
+
+  def create_icon_from_png_base64(b64) when is_binary(b64) do
+    case Transport.call("icon.create", %{"png_base64" => b64}) do
+      {:ok, %{"icon_id" => id}} -> {:ok, {:icon, id}}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  @doc """
+  Enable or disable the webview context menu for the content handle returned by `attach/1`.
+  """
+  def set_context_menu(webview, enabled) when is_binary(webview) do
+    _ =
+      Transport.call("webview.set_context_menu", %{
+        "webview_id" => webview,
+        "enabled" => !!enabled
+      })
+
+    :ok
+  end
+
+  def set_context_menu(_, _), do: :ok
 
   defp icon_id({:icon, id}), do: id
   defp icon_id({:image, id}), do: id

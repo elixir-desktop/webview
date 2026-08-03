@@ -805,6 +805,11 @@ JsonNode* HostController::dispatch(const std::string& method, JsonNode* params) 
     return jsonutil::bool_node(true);
   }
 
+  if (method == "dialog.choose_file" || method == "dialog.choose_directory" ||
+      method == "dialog.prompt") {
+    throw HostError{-32004, "dialog RPCs not implemented on Linux yet"};
+  }
+
   throw HostError{-32601, "Method not found: " + method};
 }
 

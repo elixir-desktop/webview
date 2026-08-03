@@ -350,9 +350,52 @@ final class HostController: NSObject {
             permissionPolicy[origin] = map
             return .bool(true)
 
+        case "dialog.choose_file":
+            return dialogChoose(params, directories: false)
+        case "dialog.choose_directory":
+            return dialogChoose(params, directories: true)
+        case "dialog.prompt":
+            return dialogPrompt(params)
+
         default:
             throw HostError(-32601, "Method not found: \(method)")
         }
+    }
+
+    private func dialogChoose(_ params: JSONValue?, directories: Bool) -> JSONValue {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = !directories
+        panel.canChooseDirectories = directories
+        panel.allowsMultipleSelection = false
+        panel.canCreateDirectories = directories
+        if let title = params?["title"]?.stringValue {
+            panel.message = title
+            panel.title = title
+        }
+        if let path = params?["default_path"]?.stringValue, !path.isEmpty {
+            panel.directoryURL = URL(fileURLWithPath: path, isDirectory: true)
+        }
+        let result = panel.runModal()
+        if result == .OK, let url = panel.url {
+            return .object(["path": .string(url.path)])
+        }
+        return .null
+    }
+
+    private func dialogPrompt(_ params: JSONValue?) -> JSONValue {
+        let alert = NSAlert()
+        alert.messageText = params?["title"]?.stringValue ?? ""
+        alert.informativeText = params?["message"]?.stringValue ?? ""
+        alert.addButton(withTitle: "OK")
+        alert.addButton(withTitle: "Cancel")
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 280, height: 24))
+        field.stringValue = params?["default_value"]?.stringValue ?? ""
+        alert.accessoryView = field
+        let response = alert.runModal()
+        if response == .alertFirstButtonReturn {
+            return .object(["value": .string(field.stringValue)])
+        }
+        return .null
     }
 
     private func handleTest(_ method: String, params: JSONValue?, id: JSONValue?) -> JSONRPC.Response? {

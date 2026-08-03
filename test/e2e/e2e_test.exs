@@ -14,6 +14,7 @@ defmodule DesktopWebview.E2ETest do
     end
 
     {:ok, launcher} = Launcher.start(test_rpc: true, lifetime: :reconnect)
+
     on_exit(fn ->
       # Best-effort kill of host process
       if is_port(launcher.port) and Port.info(launcher.port) do
@@ -77,7 +78,9 @@ defmodule DesktopWebview.E2ETest do
     assert {:ok, list} = Transport.call("test.window.list", %{})
     assert Enum.any?(list, &(&1["window_id"] == wid))
 
-    assert {:ok, true} = Transport.call("window.set_title", %{"window_id" => wid, "title" => "E2E2"})
+    assert {:ok, true} =
+             Transport.call("window.set_title", %{"window_id" => wid, "title" => "E2E2"})
+
     assert {:ok, true} = Transport.call("window.raise", %{"window_id" => wid})
     assert {:ok, true} = Transport.call("window.hide", %{"window_id" => wid})
     assert {:ok, true} = Transport.call("window.show", %{"window_id" => wid, "show" => true})
@@ -109,6 +112,7 @@ defmodule DesktopWebview.E2ETest do
              Transport.call("menu.create", %{"kind" => "menubar", "dom" => dom})
 
     assert {:ok, %{"icon_id" => iid}} = Transport.call("icon.create", %{})
+
     assert {:ok, %{"tray_id" => tid}} =
              Transport.call("tray.create", %{"icon_id" => iid, "menu_id" => mid})
 
