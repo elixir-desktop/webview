@@ -11,7 +11,15 @@ let package = Package(
             linkerSettings: [
                 .linkedFramework("AppKit"),
                 .linkedFramework("WebKit"),
-                .linkedFramework("UserNotifications")
+                .linkedFramework("UserNotifications"),
+                .linkedFramework("AVFoundation"),
+                // Embed Info.plist so TCC can show mic/camera prompts for bare binaries.
+                .unsafeFlags([
+                    "-Xlinker", "-sectcreate",
+                    "-Xlinker", "__TEXT",
+                    "-Xlinker", "__info_plist",
+                    "-Xlinker", "Info.plist"
+                ])
             ]
         )
     ]

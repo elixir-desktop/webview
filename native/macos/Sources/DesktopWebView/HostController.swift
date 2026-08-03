@@ -1,4 +1,5 @@
 import AppKit
+import AVFoundation
 import Foundation
 import UserNotifications
 import WebKit
@@ -56,6 +57,9 @@ final class HostController: NSObject {
         }
 
         NSApp.setActivationPolicy(.regular)
+        // Probe OS mic TCC early so the usage string from embedded Info.plist can
+        // surface a System Settings prompt before CallLive getUserMedia.
+        AVCaptureDevice.requestAccess(for: .audio) { _ in }
         // UNUserNotificationCenter requires a real app bundle; defer until notification.show.
     }
 
@@ -674,6 +678,11 @@ final class HostController: NSObject {
 
     private func setAppleMenu(_ params: JSONValue?) -> JSONValue {
         let name = params?["app_name"]?.stringValue ?? "App"
+        // Secondary windows (e.g. CallWindow) also call menu.set_apple; keep the
+        // first product name so the menubar / process name are not overwritten.
+        if appleMenuSet {
+            return .bool(true)
+        }
         appDisplayName = name
         // Without an .app bundle, AppKit uses the executable name ("DesktopWebView")
         // for the application menu title. Align the process name with the product.
@@ -768,8 +777,9 @@ final class HostController: NSObject {
         let id = params?["id"]?.stringValue ?? nextId("n")
         let title = params?["title"]?.stringValue ?? ""
         let message = params?["message"]?.stringValue ?? ""
-        let bundled = Bundle.main.bundleURL.pathExtension == "app"
-        if bundled {
+        // UNUserNotificationCenter only delivers from a real .app bundle. Local
+        // `./run` hosts are bare binaries, so fall back to AppleScript.
+        if Bundle.main.bundleURL.pathExtension == "app" {
             let content = UNMutableNotificationContent()
             content.title = title
             content.body = message
@@ -779,9 +789,23 @@ final class HostController: NSObject {
                 center.add(req, withCompletionHandler: nil)
             }
         } else {
-            fputs("notification: \(title): \(message)\n", stderr)
+            showCliNotification(title: title, message: message)
         }
         return .object(["notification_id": .string(id)])
+    }
+
+    private func showCliNotification(title: String, message: String) {
+        func escape(_ s: String) -> String {
+            s.replacingOccurrences(of: "\\", with: "\\\\")
+                .replacingOccurrences(of: "\"", with: "\\\"")
+        }
+        let script =
+            "display notification \"\(escape(message))\" with title \"\(escape(title))\""
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        task.arguments = ["-e", script]
+        try? task.run()
+        fputs("notification: \(title): \(message)\n", stderr)
     }
 
     private func iconCreate(_ params: JSONValue?) throws -> JSONValue {

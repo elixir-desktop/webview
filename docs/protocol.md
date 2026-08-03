@@ -135,8 +135,10 @@ section disagree, **fix the host** and keep this section as the contract.
 - `icon.create` accepts filesystem `path` and/or `png_base64`. Empty params MAY
   create a placeholder icon so callers can proceed.
 - `notification.show` should use the platform notification center when running
-  as a real packaged app. CLI / unpackaged helpers MAY log and still return a
-  `notification_id` (E2E must not require a visible banner).
+  as a real packaged app. CLI / unpackaged helpers SHOULD still attempt a
+  visible fallback when the OS allows it (e.g. AppleScript on macOS) and MAY
+  also log; they must still return a `notification_id` (E2E must not require
+  a visible banner).
 
 ### Permissions (hybrid)
 

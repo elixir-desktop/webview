@@ -28,6 +28,9 @@ final class WebWindowController: NSObject, NSWindowDelegate, WKUIDelegate, WKNav
 
         let config = WKWebViewConfiguration()
         config.preferences.isElementFullscreenEnabled = true
+        // Secure localhost LiveView is a valid getUserMedia context; ensure capture
+        // APIs are enabled for CallLive in secondary windows.
+        config.mediaTypesRequiringUserActionForPlayback = []
         if #available(macOS 14.0, *) {
             // media capture handled via UI delegate
         }
@@ -44,6 +47,7 @@ final class WebWindowController: NSObject, NSWindowDelegate, WKUIDelegate, WKNav
     func rebuildWebView() -> String {
         let newId = host?.nextId("v") ?? webviewId
         let config = WKWebViewConfiguration()
+        config.mediaTypesRequiringUserActionForPlayback = []
         let frame = webView.frame
         let wv = WKWebView(frame: frame, configuration: config)
         wv.uiDelegate = self

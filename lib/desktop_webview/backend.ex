@@ -32,6 +32,8 @@ defmodule DesktopWebview.Backend do
 
     case connect_or_launch() do
       :ok ->
+        # Desktop owns the webview; grant WebKit capture. OS TCC remains the gate.
+        Transport.set_permission_handler(fn _ -> "allow" end)
         put_webview_backend("DesktopWebView")
         {:edw, :ok}
 
@@ -320,8 +322,10 @@ defmodule DesktopWebview.Backend do
   @impl true
   def content_show(nil, _frame, url, _), do: open_external_url(url)
 
-  def content_show(webview, frame, url, _only_open) do
-    if url, do: load_url(webview, frame, url)
+  def content_show(webview, frame, url, only_open) do
+    # `only_open` is true for `Desktop.Window.show(pid)` (no URL arg). Raising an
+    # already-loaded window must not re-navigate — that remounts LiveView / WebRTC.
+    if url && !only_open, do: load_url(webview, frame, url)
     show(frame, show: true)
     raise_window(frame)
     :ok

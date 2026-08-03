@@ -46,7 +46,7 @@ defmodule DesktopWebview.Launcher do
           {:ok, %{port: port, listen_port: listen_port, binary: binary, drain_pid: drain_pid}}
 
         {:error, reason} ->
-          Port.close(port)
+          close_port(port)
           {:error, reason}
       end
     end
@@ -58,19 +58,20 @@ defmodule DesktopWebview.Launcher do
       Process.exit(pid, :kill)
     end
 
-    try do
-      case Port.info(port) do
-        nil -> :ok
-        _ -> Port.close(port)
-      end
-    rescue
-      ArgumentError -> :ok
-    end
-
+    close_port(port)
     :ok
   end
 
   def stop(_), do: :ok
+
+  defp close_port(port) do
+    case Port.info(port) do
+      nil -> :ok
+      _ -> Port.close(port)
+    end
+  rescue
+    ArgumentError -> :ok
+  end
 
   defp test_rpc_args(opts) do
     if Keyword.get(opts, :test_rpc, false), do: ["--edw-test-rpc"], else: []

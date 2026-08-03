@@ -81,6 +81,12 @@ Hybrid policy (see `docs/protocol.md`): set defaults with
 `system.set_permission_policy`, handle inbound `permission.request` RPC, and still
 satisfy OS privacy prompts. Platform packaging notes are in `docs/packaging.md`.
 
+`DesktopWebview.Backend.init_env/0` grants WebKit capture (`permission.request` →
+`allow`) because the desktop host owns the page. macOS still requires
+`NSMicrophoneUsageDescription` / `NSCameraUsageDescription` (embedded in the
+host binary via `native/macos/Info.plist`) and a System Settings approval for
+the `DesktopWebView` process. Without that TCC grant, CallLive `getUserMedia`
+fails as `audio_denied` even when WebKit is allowed.
 ## Porting another OS
 
 See [docs/porting.md](porting.md).

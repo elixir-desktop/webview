@@ -21,5 +21,10 @@ fi
 
 cp -f "$BIN" "$OUT_DIR/DesktopWebView"
 chmod +x "$OUT_DIR/DesktopWebView"
+# Embedding __info_plist (mic/camera usage) invalidates any prior signature;
+# ad-hoc sign so macOS will load the binary (otherwise SIGKILL / Invalid Page).
+codesign --force --sign - --identifier io.elixirdesktop.desktopwebview \
+  "$OUT_DIR/DesktopWebView"
 echo "Built $OUT_DIR/DesktopWebView"
 file "$OUT_DIR/DesktopWebView" || true
+codesign -dv "$OUT_DIR/DesktopWebView" 2>&1 | head -8 || true
