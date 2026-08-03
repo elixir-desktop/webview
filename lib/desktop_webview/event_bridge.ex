@@ -124,6 +124,18 @@ defmodule DesktopWebview.EventBridge do
     state
   end
 
+  defp dispatch("event.system.quit", _params, state) do
+    # Host Quit / Cmd+Q — Elixir owns process lifetime (Desktop.OS.shutdown).
+    quit =
+      Application.get_env(:desktop_webview, :quit_fun, fn ->
+        _ = Transport.call("system.prepare_quit", %{})
+        Desktop.Window.quit()
+      end)
+
+    spawn(fn -> quit.() end)
+    state
+  end
+
   defp dispatch("event.menu.click", %{"menu_id" => menu_id, "onclick" => onclick}, state) do
     if pid = Map.get(state.menus, menu_id) do
       GenServer.cast(pid, {:trigger_event, onclick})

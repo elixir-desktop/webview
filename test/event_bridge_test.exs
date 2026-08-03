@@ -33,6 +33,15 @@ defmodule DesktopWebview.EventBridgeTest do
     assert_receive {:"$gen_cast", {:trigger_event, "quit"}}, 500
   end
 
+  test "quit invokes configured quit_fun", %{bridge: bridge} do
+    test = self()
+    Application.put_env(:desktop_webview, :quit_fun, fn -> send(test, :quit_requested) end)
+    on_exit(fn -> Application.delete_env(:desktop_webview, :quit_fun) end)
+
+    send(bridge, {:edw_event, "event.system.quit", %{}})
+    assert_receive :quit_requested, 500
+  end
+
   test "open_url notifies Desktop.Env subscribers when Env is running", %{bridge: bridge} do
     # Without Desktop.Env, dispatch is a no-op — just ensure no crash.
     send(bridge, {:edw_event, "event.system.open_url", %{"url" => "ddrive://invite/abc"}})

@@ -259,10 +259,23 @@ AppKit dialogs run on the host main thread and block the RPC until dismissed.
 | `system.open_url` | `url` | `true` |
 | `system.locale` | — | `string \| null` |
 | `system.os_description` | — | `string` |
+| `system.prepare_quit` | — | `true` (host will exit after client disconnect) |
 | `system.set_permission_policy` | `origin`, `camera`/`microphone`: `"allow"|"deny"|"ask"` | `true` |
 
 Events: `event.notification.click`, `event.notification.dismiss`,
-`event.system.open_url`, `event.system.open_file`, `event.system.reopen`.
+`event.system.open_url`, `event.system.open_file`, `event.system.reopen`,
+`event.system.quit`.
+
+### Application quit
+
+- macOS Quit menu / Cmd+Q / Dock Quit MUST NOT tear down only the host while
+  leaving BEAM running.
+- Host intercepts terminate, emits `event.system.quit`, and waits
+  (`terminateLater`) for the client to disconnect (Elixir should call
+  `Desktop.Window.quit` / `Desktop.OS.shutdown`).
+- After client disconnect (or a short fallback timeout) the host finishes
+  quitting. Packaged mode also terminates any BEAM child it spawned.
+- Elixir `EventBridge` maps `event.system.quit` → `Desktop.Window.quit/0`.
 
 ### Permissions (hybrid)
 

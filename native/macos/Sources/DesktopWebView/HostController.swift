@@ -17,6 +17,10 @@ final class HostController: NSObject {
     private var permissionPolicy: [String: [String: String]] = [:] // origin -> type -> allow|deny|ask
     private var beamProcess: Process?
     private var appleMenuSet = false
+    /// True after the user/OS asked to quit; BEAM is expected to shut down next.
+    private(set) var quitRequested = false
+    /// When true, `applicationShouldTerminate` may finish tearing down the host.
+    private(set) var readyToTerminate = false
 
     init(config: HostConfig) {
         self.config = config
@@ -67,12 +71,30 @@ final class HostController: NSObject {
     }
 
     private func clientDisconnected() {
-        if config.lifetime == .coupled {
-            beamProcess?.terminate()
-            NSApp.terminate(nil)
+        if quitRequested || config.lifetime == .coupled {
+            finishQuit()
+            return
         }
         // reconnect: keep windows; client will re-initialize
         initialized = false
+    }
+
+    /// Ask Elixir to shut down (`event.system.quit`). Used by Quit menu / Cmd+Q.
+    func requestQuit() {
+        guard !quitRequested else { return }
+        quitRequested = true
+        server.notify(method: "event.system.quit", params: .object([:]))
+        // If BEAM never disconnects (already dead / hung), still exit the host.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { [weak self] in
+            self?.finishQuit()
+        }
+    }
+
+    func finishQuit() {
+        readyToTerminate = true
+        beamProcess?.terminate()
+        NSApp.reply(toApplicationShouldTerminate: true)
+        NSApp.terminate(nil)
     }
 
     func nextId(_ prefix: String) -> String {
@@ -342,6 +364,10 @@ final class HostController: NSObject {
         case "system.os_description":
             let v = ProcessInfo.processInfo.operatingSystemVersionString
             return .string("macOS \(v)")
+        case "system.prepare_quit":
+            // Elixir is about to halt; mark so TCP disconnect finishes host teardown.
+            quitRequested = true
+            return .bool(true)
         case "system.set_permission_policy":
             guard let origin = params?["origin"]?.stringValue else { throw HostError(-32602, "origin") }
             var map = permissionPolicy[origin] ?? [:]

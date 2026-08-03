@@ -24,6 +24,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         false
     }
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        // Quit menu / Cmd+Q / Dock Quit all go through terminate(_:). Notify BEAM
+        // first so the Elixir process exits; only then tear down the host.
+        if host.readyToTerminate {
+            return .terminateNow
+        }
+        host.requestQuit()
+        return .terminateLater
+    }
 }
 
 let config = HostConfig.parse(argv: CommandLine.arguments)

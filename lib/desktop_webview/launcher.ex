@@ -112,8 +112,18 @@ defmodule DesktopWebview.Launcher do
 
   defp drain_port(port) do
     receive do
-      {^port, {:data, _}} -> drain_port(port)
-      {^port, {:exit_status, _}} -> :ok
+      {^port, {:data, _}} ->
+        drain_port(port)
+
+      {^port, {:exit_status, _}} ->
+        # Host process exited (Quit, crash, or Port.close). When enabled, stop BEAM
+        # so a killed UI host cannot leave an orphaned Elixir node.
+        if Application.get_env(:desktop_webview, :halt_on_host_exit, false) do
+          quit = Application.get_env(:desktop_webview, :quit_fun, &Desktop.Window.quit/0)
+          spawn(fn -> quit.() end)
+        end
+
+        :ok
     end
   end
 end

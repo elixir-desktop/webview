@@ -59,6 +59,8 @@ defmodule DesktopWebview.Backend do
              ) do
           {:ok, launcher} ->
             Transport.attach_launcher(launcher)
+            # Desktop apps: if the host process dies, halt BEAM (orphan prevention).
+            Application.put_env(:desktop_webview, :halt_on_host_exit, true)
 
             case Transport.connect("127.0.0.1", launcher.listen_port) do
               {:ok, _} -> :ok
