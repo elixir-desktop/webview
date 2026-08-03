@@ -66,9 +66,10 @@ Notification (no `id`):
 3. Client connects and calls `initialize`.
 4. Client drives windows/menus/… ; host emits `event.*` notifications and may send
    requests (e.g. `permission.request`) that the client must answer.
-5. Default lifetime: host keeps listening after disconnect (`reconnect`).
-   `--edw-lifetime=coupled` exits the host when the client disconnects (and kills
-   BEAM when the host exits in packaged mode).
+5. Default lifetime: host keeps listening after disconnect (`reconnect`) in
+   host-first packaged mode. `--edw-lifetime=coupled` exits the host when the
+   client disconnects (and kills BEAM when the host exits in packaged mode).
+   BEAM-first / `--edw-no-beam` (dev) always exits the host on client disconnect.
 
 ## Behavioral semantics
 
@@ -91,6 +92,8 @@ section disagree, **fix the host** and keep this section as the contract.
   MUST call `initialize` again. The host MAY reset RPC session state (pending
   request ids); it SHOULD keep existing window/webview resources addressable by
   the same ids until the client destroys them (macOS currently keeps them).
+  **Exception:** `--edw-no-beam` (BEAM-first/dev) still exits the host on
+  disconnect — there is no host-owned BEAM to reconnect to.
 - On **coupled** lifetime, client disconnect terminates the host; host exit
   terminates the BEAM child if the host spawned it.
 

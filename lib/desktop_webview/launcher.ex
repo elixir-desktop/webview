@@ -77,9 +77,11 @@ defmodule DesktopWebview.Launcher do
   end
 
   defp lifetime_args(opts) do
-    case Keyword.get(opts, :lifetime, :reconnect) do
-      :coupled -> ["--edw-lifetime=coupled"]
-      _ -> ["--edw-lifetime=reconnect"]
+    # BEAM-first launches use --edw-no-beam; default to coupled so stopping the
+    # VM tears down the host (reconnect is for host-first packaged mode).
+    case Keyword.get(opts, :lifetime, :coupled) do
+      :reconnect -> ["--edw-lifetime=reconnect"]
+      _ -> ["--edw-lifetime=coupled"]
     end
   end
 

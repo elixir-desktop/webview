@@ -55,7 +55,7 @@ defmodule DesktopWebview.Backend do
       Application.get_env(:desktop_webview, :auto_launch, true) ->
         case Launcher.start(
                test_rpc: Application.get_env(:desktop_webview, :test_rpc, false),
-               lifetime: Application.get_env(:desktop_webview, :lifetime, :reconnect)
+               lifetime: Application.get_env(:desktop_webview, :lifetime, :coupled)
              ) do
           {:ok, launcher} ->
             Transport.attach_launcher(launcher)

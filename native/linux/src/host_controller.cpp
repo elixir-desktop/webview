@@ -113,7 +113,8 @@ bool HostController::start() {
 }
 
 void HostController::client_disconnected() {
-  if (config_.lifetime == Lifetime::Coupled) {
+  // BEAM-first/dev (`--edw-no-beam`): exit with the Elixir client.
+  if (config_.lifetime == Lifetime::Coupled || config_.no_beam) {
     if (beam_pid_ > 0) {
       kill(beam_pid_, SIGTERM);
       beam_pid_ = 0;

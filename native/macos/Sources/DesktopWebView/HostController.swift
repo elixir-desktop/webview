@@ -74,11 +74,14 @@ final class HostController: NSObject {
     }
 
     private func clientDisconnected() {
-        if quitRequested || config.lifetime == .coupled {
+        // BEAM-first/dev (`--edw-no-beam`): the Elixir node owns the host. When it
+        // disconnects the UI must go away — reconnect only makes sense when the
+        // host owns BEAM and can accept a new client.
+        if quitRequested || config.lifetime == .coupled || config.noBeam {
             finishQuit()
             return
         }
-        // reconnect: keep windows; client will re-initialize
+        // Host-first + reconnect: keep windows; client will re-initialize
         initialized = false
     }
 
