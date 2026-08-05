@@ -9,7 +9,7 @@ defmodule DesktopWebview.E2ETest do
     unless Binary.available?() do
       flunk(
         "DesktopWebView binary missing at #{Binary.path()}; " <>
-          "run ./scripts/build_macos.sh or ./scripts/build_linux.sh"
+          "run ./scripts/build_macos.sh, ./scripts/build_linux.sh, or .\\scripts\\build_windows.ps1"
       )
     end
 
@@ -26,7 +26,13 @@ defmodule DesktopWebview.E2ETest do
       end
 
       # Also kill by name in case port already closed
-      System.cmd("pkill", ["-f", "DesktopWebView --edw-no-beam"], stderr_to_stdout: true)
+      case :os.type() do
+        {:win32, _} ->
+          System.cmd("taskkill", ["/F", "/IM", "DesktopWebView.exe"], stderr_to_stdout: true)
+
+        _ ->
+          System.cmd("pkill", ["-f", "DesktopWebView --edw-no-beam"], stderr_to_stdout: true)
+      end
     end)
 
     # Ensure transport is fresh
