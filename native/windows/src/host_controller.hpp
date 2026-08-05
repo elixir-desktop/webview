@@ -8,7 +8,6 @@
 #include <map>
 #include <memory>
 #include <string>
-#include <vector>
 
 struct HostError {
   int code;
@@ -18,7 +17,6 @@ struct HostError {
 struct MenuEntry {
   HMENU menu = nullptr;
   std::map<UINT, std::string> onclicks;  // command id -> onclick
-  std::string menu_id;
 };
 
 struct TrayEntry {
@@ -29,8 +27,6 @@ struct TrayEntry {
 };
 
 struct IconEntry {
-  std::string path;
-  std::vector<uint8_t> png;
   HICON icon = nullptr;
 };
 

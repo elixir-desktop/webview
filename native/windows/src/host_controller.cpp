@@ -1,53 +1,14 @@
 #include "host_controller.hpp"
+#include "win_util.hpp"
 
-#include <shellapi.h>
-#include <wincrypt.h>
-
-#include <cctype>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <fstream>
 #include <sstream>
 
 namespace {
 
-std::string join_path(const std::string& a, const std::string& b) {
-  if (a.empty()) return b;
-  char last = a.back();
-  if (last == '/' || last == '\\') return a + b;
-  return a + "\\" + b;
-}
-
-bool is_absolute(const std::string& p) {
-  if (p.size() >= 2 && std::isalpha(static_cast<unsigned char>(p[0])) && p[1] == ':') return true;
-  return p.size() >= 2 && p[0] == '\\' && p[1] == '\\';
-}
-
-std::wstring widen(const std::string& s) {
-  if (s.empty()) return L"";
-  int n = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), -1, nullptr, 0);
-  std::wstring out(n > 0 ? n - 1 : 0, L'\0');
-  if (n > 1) MultiByteToWideChar(CP_UTF8, 0, s.c_str(), -1, out.data(), n);
-  return out;
-}
-
-std::vector<uint8_t> base64_decode(const std::string& in) {
-  DWORD len = 0;
-  if (!CryptStringToBinaryA(in.c_str(), 0, CRYPT_STRING_BASE64, nullptr, &len, nullptr, nullptr))
-    return {};
-  std::vector<uint8_t> out(len);
-  if (!CryptStringToBinaryA(in.c_str(), 0, CRYPT_STRING_BASE64, out.data(), &len, nullptr, nullptr))
-    return {};
-  out.resize(len);
-  return out;
-}
-
-HICON icon_from_png(const std::vector<uint8_t>& png) {
-  // Optional PNG→HICON path deferred; protocol accepts empty icons.
-  (void)png;
-  return nullptr;
-}
+constexpr const wchar_t* kHostClass = L"DesktopWebViewHost";
 
 struct RequestMsg {
   HostController* self;
@@ -56,8 +17,6 @@ struct RequestMsg {
   jsonutil::Json params;
   RpcServer::ReplyFn reply;
 };
-
-constexpr const wchar_t* kHostClass = L"DesktopWebViewHost";
 
 }  // namespace
 
@@ -206,7 +165,7 @@ void HostController::spawn_beam() {
   auto root = config_.resources_root();
   std::string beam_dir =
       config_.beam_path
-          ? (is_absolute(*config_.beam_path) ? *config_.beam_path : join_path(root, *config_.beam_path))
+          ? (is_absolute_path(*config_.beam_path) ? *config_.beam_path : join_path(root, *config_.beam_path))
           : join_path(root, "beam");
   std::string app_name = config_.beam_app.value_or("");
   if (app_name.empty()) {
@@ -230,7 +189,7 @@ void HostController::spawn_beam() {
   std::string script = join_path(join_path(beam_dir, "bin"), app_name);
   std::string wd =
       config_.beam_working_dir
-          ? (is_absolute(*config_.beam_working_dir) ? *config_.beam_working_dir
+          ? (is_absolute_path(*config_.beam_working_dir) ? *config_.beam_working_dir
                                                     : join_path(root, *config_.beam_working_dir))
           : beam_dir;
 
@@ -245,10 +204,7 @@ void HostController::spawn_beam() {
   LPWCH strings = GetEnvironmentStringsW();
   if (strings) {
     for (LPWCH p = strings; *p; p += wcslen(p) + 1) {
-      std::string entry;
-      int n = WideCharToMultiByte(CP_UTF8, 0, p, -1, nullptr, 0, nullptr, nullptr);
-      entry.assign(n > 0 ? n - 1 : 0, '\0');
-      if (n > 1) WideCharToMultiByte(CP_UTF8, 0, p, -1, entry.data(), n, nullptr, nullptr);
+      std::string entry = wide_to_utf8(p);
       auto eq = entry.find('=');
       if (eq != std::string::npos) env[entry.substr(0, eq)] = entry.substr(eq + 1);
     }
@@ -260,7 +216,7 @@ void HostController::spawn_beam() {
 
   std::wstring env_block;
   for (auto& [k, v] : env) {
-    env_block += widen(k + "=" + v);
+    env_block += utf8_to_wide(k + "=" + v);
     env_block.push_back(L'\0');
   }
   env_block.push_back(L'\0');
@@ -268,8 +224,8 @@ void HostController::spawn_beam() {
   STARTUPINFOW si{};
   si.cb = sizeof(si);
   PROCESS_INFORMATION pi{};
-  std::wstring wcmd = widen(cmdline);
-  std::wstring wwd = widen(wd);
+  std::wstring wcmd = utf8_to_wide(cmdline);
+  std::wstring wwd = utf8_to_wide(wd);
   std::vector<wchar_t> mutable_cmd(wcmd.begin(), wcmd.end());
   mutable_cmd.push_back(L'\0');
 
@@ -375,10 +331,11 @@ void HostController::wire_window(WebWindow* w) {
              ICoreWebView2PermissionRequestedEventArgs* args) {
         handle_permission(origin, type, webview_id, args);
       });
+  w->set_menu_command_handler([this](UINT cmd) { return on_menu_command(cmd); });
 }
 
 void HostController::open_external(const std::string& url) {
-  ShellExecuteW(nullptr, L"open", widen(url).c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+  ShellExecuteW(nullptr, L"open", utf8_to_wide(url).c_str(), nullptr, nullptr, SW_SHOWNORMAL);
 }
 
 void HostController::handle_permission(const std::string& origin, const std::string& type,
@@ -387,8 +344,15 @@ void HostController::handle_permission(const std::string& origin, const std::str
   auto policy = permission_policy_[origin][type];
   if (policy.empty()) policy = "ask";
 
-  auto finish = [args](COREWEBVIEW2_PERMISSION_STATE state) {
+  ICoreWebView2Deferral* deferral = nullptr;
+  args->GetDeferral(&deferral);
+
+  auto finish = [args, deferral](COREWEBVIEW2_PERMISSION_STATE state) {
     args->put_State(state);
+    if (deferral) {
+      deferral->Complete();
+      deferral->Release();
+    }
     args->Release();
   };
 
@@ -401,12 +365,9 @@ void HostController::handle_permission(const std::string& origin, const std::str
     return;
   }
 
-  jsonutil::Json params{
-      {"origin", origin}, {"type", type}, {"webview_id", webview_id}};
+  jsonutil::Json params{{"origin", origin}, {"type", type}, {"webview_id", webview_id}};
   server_.request("permission.request", std::move(params), [finish](jsonutil::Json result) {
-    std::string decision = "ask";
-    if (result.is_object() && result.contains("decision") && result["decision"].is_string())
-      decision = result["decision"].get<std::string>();
+    auto decision = jsonutil::get_string(result, "decision").value_or("ask");
     if (decision == "allow")
       finish(COREWEBVIEW2_PERMISSION_STATE_ALLOW);
     else if (decision == "deny")
@@ -480,7 +441,7 @@ void HostController::append_menu_node(HMENU menu, const jsonutil::Json& node, Me
     if (auto* kids = jsonutil::get(node, "children"); kids && kids->is_array()) {
       for (auto& child : *kids) append_menu_node(sub, child, entry);
     }
-    AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(sub), widen(label).c_str());
+    AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(sub), utf8_to_wide(label).c_str());
     return;
   }
 
@@ -490,7 +451,7 @@ void HostController::append_menu_node(HMENU menu, const jsonutil::Json& node, Me
         attrs ? jsonutil::get_string(*attrs, "onclick").value_or("") : "";
     UINT cmd = next_menu_cmd_++;
     entry.onclicks[cmd] = onclick;
-    AppendMenuW(menu, MF_STRING, cmd, widen(label).c_str());
+    AppendMenuW(menu, MF_STRING, cmd, utf8_to_wide(label).c_str());
   }
 }
 
@@ -510,8 +471,6 @@ void HostController::build_menu_into(HMENU menu, const jsonutil::Json& dom, Menu
 jsonutil::Json HostController::menu_create(const jsonutil::Json& params) {
   auto id = next_id("m");
   MenuEntry entry;
-  entry.menu_id = id;
-  // Menubar uses CreateMenu; popup uses CreatePopupMenu. Prefer CreateMenu for menubar tag.
   bool as_menubar = false;
   if (auto* dom = jsonutil::get(params, "dom"); dom && dom->is_object()) {
     as_menubar = jsonutil::get_string(*dom, "tag").value_or("") == "menubar";
@@ -533,7 +492,6 @@ jsonutil::Json HostController::menu_update(const jsonutil::Json& params) {
     as_menubar = jsonutil::get_string(*dom, "tag").value_or("") == "menubar";
   }
   it->second.menu = as_menubar ? CreateMenu() : CreatePopupMenu();
-  it->second.menu_id = *id;
   if (auto* dom = jsonutil::get(params, "dom")) build_menu_into(it->second.menu, *dom, it->second);
   return true;
 }
@@ -572,13 +530,10 @@ jsonutil::Json HostController::icon_create(const jsonutil::Json& params) {
   auto id = next_id("icon");
   IconEntry icon;
   if (auto path = jsonutil::get_string(params, "path")) {
-    icon.path = *path;
-    icon.icon = static_cast<HICON>(
-        LoadImageW(nullptr, widen(*path).c_str(), IMAGE_ICON, 0, 0, LR_LOADFROMFILE | LR_DEFAULTSIZE));
-  } else if (auto b64 = jsonutil::get_string(params, "png_base64")) {
-    icon.png = base64_decode(*b64);
-    icon.icon = icon_from_png(icon.png);
+    icon.icon = static_cast<HICON>(LoadImageW(nullptr, utf8_to_wide(*path).c_str(), IMAGE_ICON, 0, 0,
+                                              LR_LOADFROMFILE | LR_DEFAULTSIZE));
   }
+  // png_base64 accepted for protocol compatibility; decoding deferred (status: partial).
   icons_[id] = std::move(icon);
   return jsonutil::Json{{"icon_id", id}};
 }
@@ -591,8 +546,8 @@ jsonutil::Json HostController::notification_show(const jsonutil::Json& params) {
   if (!trays_.empty()) {
     auto& tray = trays_.begin()->second;
     tray.nid.uFlags = NIF_INFO | NIF_ICON | NIF_MESSAGE | NIF_TIP;
-    wcsncpy_s(tray.nid.szInfoTitle, widen(title).c_str(), _TRUNCATE);
-    wcsncpy_s(tray.nid.szInfo, widen(message).c_str(), _TRUNCATE);
+    wcsncpy_s(tray.nid.szInfoTitle, utf8_to_wide(title).c_str(), _TRUNCATE);
+    wcsncpy_s(tray.nid.szInfo, utf8_to_wide(message).c_str(), _TRUNCATE);
     tray.nid.dwInfoFlags = NIIF_INFO;
     if (tray.registered) Shell_NotifyIconW(NIM_MODIFY, &tray.nid);
   } else {
@@ -656,10 +611,7 @@ jsonutil::Json HostController::dispatch(const std::string& method, const jsonuti
     auto* w = require_window(p);
     if (auto menu_id = jsonutil::get_string(p, "menu_id")) {
       auto it = menus_.find(*menu_id);
-      if (it != menus_.end()) {
-        w->set_menubar(it->second.menu);
-        w->set_menu_command_handler([this](UINT cmd) { return on_menu_command(cmd); });
-      }
+      if (it != menus_.end()) w->set_menubar(it->second.menu);
     }
     return true;
   }
@@ -769,12 +721,8 @@ jsonutil::Json HostController::dispatch(const std::string& method, const jsonuti
   if (method == "system.locale") {
     wchar_t buf[128];
     if (GetUserDefaultLocaleName(buf, 128) > 0) {
-      std::string loc;
-      int n = WideCharToMultiByte(CP_UTF8, 0, buf, -1, nullptr, 0, nullptr, nullptr);
-      loc.assign(n > 0 ? n - 1 : 0, '\0');
-      if (n > 1) WideCharToMultiByte(CP_UTF8, 0, buf, -1, loc.data(), n, nullptr, nullptr);
+      std::string loc = wide_to_utf8(buf);
       for (auto& c : loc) c = static_cast<char>(tolower(static_cast<unsigned char>(c)));
-      // Windows uses en-US; normalize hyphen to underscore-ish for protocol softness
       for (auto& c : loc)
         if (c == '-') c = '_';
       return loc;

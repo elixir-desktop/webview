@@ -146,15 +146,24 @@ void RpcServer::on_readable() {
 }
 
 void RpcServer::drain() {
-  while (buffer_.size() >= 4) {
+  constexpr uint32_t kMaxFrame = 16u * 1024u * 1024u;
+  size_t off = 0;
+  while (buffer_.size() - off >= 4) {
     uint32_t len = 0;
-    memcpy(&len, buffer_.data(), 4);
+    memcpy(&len, buffer_.data() + off, 4);
     len = ntohl(len);
-    if (buffer_.size() < 4u + len) return;
-    std::string payload(reinterpret_cast<char*>(buffer_.data() + 4), len);
-    buffer_.erase(buffer_.begin(), buffer_.begin() + 4 + static_cast<std::ptrdiff_t>(len));
+    if (len > kMaxFrame) {
+      fprintf(stderr, "edw: frame too large (%u)\n", len);
+      close_connection();
+      if (on_disconnect_) on_disconnect_();
+      return;
+    }
+    if (buffer_.size() - off < 4u + len) break;
+    std::string payload(reinterpret_cast<char*>(buffer_.data() + off + 4), len);
+    off += 4 + len;
     handle_payload(payload);
   }
+  if (off > 0) buffer_.erase(buffer_.begin(), buffer_.begin() + static_cast<std::ptrdiff_t>(off));
 }
 
 void RpcServer::handle_payload(const std::string& payload) {
@@ -166,7 +175,8 @@ void RpcServer::handle_payload(const std::string& payload) {
   bool has_result_or_error = root.contains("result") || root.contains("error");
 
   if (has_method && has_id) {
-    auto method = root["method"].get<std::string>();
+    auto method = jsonutil::get_string(root, "method").value_or("");
+    if (method.empty()) return;
     auto id = root["id"];
     jsonutil::Json params = root.contains("params") ? root["params"] : jsonutil::Json();
     if (on_request_) {
@@ -229,4 +239,9 @@ void RpcServer::close_connection() {
     client_sock_ = INVALID_SOCKET;
   }
   buffer_.clear();
+  auto pending = std::move(pending_);
+  pending_.clear();
+  for (auto& [_, cb] : pending) {
+    if (cb) cb(nullptr);
+  }
 }

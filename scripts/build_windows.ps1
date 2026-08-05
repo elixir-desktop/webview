@@ -47,11 +47,13 @@ Push-Location $Root
 try {
   & cmake -S (Join-Path $Root "native\windows") -B $BuildDir -G "Ninja" -DCMAKE_BUILD_TYPE=Release
   if ($LASTEXITCODE -ne 0) {
-    # Fallback to default generator (VS)
+    Write-Host "Ninja configure failed; wiping build dir and retrying with default generator..."
+    Remove-Item -Recurse -Force $BuildDir -ErrorAction SilentlyContinue
+    New-Item -ItemType Directory -Force -Path $BuildDir | Out-Null
     & cmake -S (Join-Path $Root "native\windows") -B $BuildDir -DCMAKE_BUILD_TYPE=Release
     if ($LASTEXITCODE -ne 0) { throw "cmake configure failed" }
   }
-  & cmake --build $BuildDir --config Release
+  & cmake --build $BuildDir --config Release --parallel
   if ($LASTEXITCODE -ne 0) { throw "cmake build failed" }
 
   $exeCandidates = @(

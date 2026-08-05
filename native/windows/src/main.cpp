@@ -1,7 +1,7 @@
 #include "config.hpp"
 #include "host_controller.hpp"
 #include "web_window.hpp"
-#include "win_prefix.hpp"
+#include "win_util.hpp"
 
 #include <cstdio>
 #include <memory>
@@ -15,12 +15,7 @@ std::vector<std::string> argv_utf8() {
   LPWSTR* wargv = CommandLineToArgvW(GetCommandLineW(), &argc);
   std::vector<std::string> out;
   if (!wargv) return out;
-  for (int i = 0; i < argc; i++) {
-    int n = WideCharToMultiByte(CP_UTF8, 0, wargv[i], -1, nullptr, 0, nullptr, nullptr);
-    std::string s(n > 0 ? n - 1 : 0, '\0');
-    if (n > 1) WideCharToMultiByte(CP_UTF8, 0, wargv[i], -1, s.data(), n, nullptr, nullptr);
-    out.push_back(std::move(s));
-  }
+  for (int i = 0; i < argc; i++) out.push_back(wide_to_utf8(wargv[i]));
   LocalFree(wargv);
   return out;
 }

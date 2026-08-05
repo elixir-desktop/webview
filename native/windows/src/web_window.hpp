@@ -1,8 +1,7 @@
 #pragma once
 
-#include "win_prefix.hpp"
-
 #include "json_util.hpp"
+#include "win_prefix.hpp"
 
 #include <WebView2.h>
 #include <wrl.h>
@@ -11,7 +10,6 @@
 #include <functional>
 #include <optional>
 #include <string>
-#include <vector>
 
 class WebWindow {
  public:
@@ -37,6 +35,7 @@ class WebWindow {
 
   void set_handlers(CloseHandler on_close, FocusHandler on_focus, NewWindowHandler on_new_window,
                     NavHandler on_nav, PermissionHandler on_permission);
+  void set_menu_command_handler(std::function<bool(UINT)> handler);
 
   void load_url(const std::string& url);
   void reload();
@@ -53,7 +52,6 @@ class WebWindow {
   bool active() const;
   void set_icon(HICON icon);
   void set_menubar(HMENU menu);
-  void set_menu_command_handler(std::function<bool(UINT)> handler);
 
   void eval_js(const std::string& script, std::function<void(jsonutil::Json)> cb);
 
@@ -64,22 +62,17 @@ class WebWindow {
   void create_webview();
   void attach_handlers();
   void resize_webview();
-  void flush_pending_url();
+  void navigate_if_ready();
   std::string origin_from_url(const std::string& url) const;
-  std::wstring widen(const std::string& s) const;
-  std::string narrow(const wchar_t* s) const;
 
   std::string window_id_;
   std::string webview_id_;
   std::string title_;
   HWND hwnd_ = nullptr;
-  HMENU menubar_ = nullptr;
   int min_width_ = 0;
   int min_height_ = 0;
-  bool visible_ = false;
   bool context_menu_enabled_ = false;
   std::optional<std::string> last_url_;
-  std::optional<std::string> pending_url_;
   bool webview_ready_ = false;
 
   Microsoft::WRL::ComPtr<ICoreWebView2Environment> env_;

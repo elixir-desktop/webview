@@ -1,4 +1,5 @@
 #include "web_window.hpp"
+#include "win_util.hpp"
 
 #include <cstdio>
 
@@ -23,22 +24,6 @@ void WebWindow::register_class() {
   g_class_registered = true;
 }
 
-std::wstring WebWindow::widen(const std::string& s) const {
-  if (s.empty()) return L"";
-  int n = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), -1, nullptr, 0);
-  std::wstring out(n > 0 ? n - 1 : 0, L'\0');
-  if (n > 1) MultiByteToWideChar(CP_UTF8, 0, s.c_str(), -1, out.data(), n);
-  return out;
-}
-
-std::string WebWindow::narrow(const wchar_t* s) const {
-  if (!s || !*s) return {};
-  int n = WideCharToMultiByte(CP_UTF8, 0, s, -1, nullptr, 0, nullptr, nullptr);
-  std::string out(n > 0 ? n - 1 : 0, '\0');
-  if (n > 1) WideCharToMultiByte(CP_UTF8, 0, s, -1, out.data(), n, nullptr, nullptr);
-  return out;
-}
-
 std::string WebWindow::origin_from_url(const std::string& url) const {
   if (url.empty()) return "http://127.0.0.1";
   auto scheme_end = url.find("://");
@@ -52,9 +37,9 @@ WebWindow::WebWindow(const std::string& window_id, const std::string& webview_id
                      const std::string& title, int width, int height)
     : window_id_(window_id), webview_id_(webview_id), title_(title) {
   register_class();
-  hwnd_ = CreateWindowExW(0, kClassName, widen(title).c_str(), WS_OVERLAPPEDWINDOW, CW_USEDEFAULT,
-                          CW_USEDEFAULT, width, height, nullptr, nullptr, GetModuleHandleW(nullptr),
-                          this);
+  hwnd_ = CreateWindowExW(0, kClassName, utf8_to_wide(title).c_str(), WS_OVERLAPPEDWINDOW,
+                          CW_USEDEFAULT, CW_USEDEFAULT, width, height, nullptr, nullptr,
+                          GetModuleHandleW(nullptr), this);
   create_webview();
 }
 
@@ -94,7 +79,7 @@ LRESULT CALLBACK WebWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
   switch (msg) {
     case WM_CLOSE:
       if (self->on_close_) self->on_close_(self->window_id_);
-      return 0;  // veto destroy
+      return 0;
     case WM_SIZE:
       self->resize_webview();
       return 0;
@@ -112,8 +97,6 @@ LRESULT CALLBACK WebWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
     case WM_COMMAND:
       if (self->on_menu_command_ && self->on_menu_command_(LOWORD(wParam))) return 0;
       break;
-    case WM_DESTROY:
-      return 0;
     default:
       break;
   }
@@ -127,7 +110,7 @@ void WebWindow::create_webview() {
 
   wchar_t temp[MAX_PATH];
   GetTempPathW(MAX_PATH, temp);
-  std::wstring user_data = std::wstring(temp) + L"DesktopWebView\\" + widen(window_id_);
+  std::wstring user_data = std::wstring(temp) + L"DesktopWebView\\" + utf8_to_wide(window_id_);
 
   HRESULT hr = CreateCoreWebView2EnvironmentWithOptions(
       nullptr, user_data.c_str(), nullptr,
@@ -155,7 +138,7 @@ void WebWindow::create_webview() {
                       webview_ready_ = true;
                       resize_webview();
                       attach_handlers();
-                      flush_pending_url();
+                      navigate_if_ready();
                       return S_OK;
                     })
                     .Get());
@@ -181,7 +164,7 @@ void WebWindow::attach_handlers() {
             if (ok) {
               LPWSTR raw = nullptr;
               sender->get_Source(&raw);
-              std::string url = narrow(raw);
+              std::string url = wide_to_utf8(raw);
               if (raw) CoTaskMemFree(raw);
               if (on_nav_) on_nav_(webview_id_, url, false, "");
             } else {
@@ -200,7 +183,7 @@ void WebWindow::attach_handlers() {
           [this](ICoreWebView2*, ICoreWebView2NewWindowRequestedEventArgs* args) -> HRESULT {
             LPWSTR raw = nullptr;
             args->get_Uri(&raw);
-            std::string url = narrow(raw);
+            std::string url = wide_to_utf8(raw);
             if (raw) CoTaskMemFree(raw);
             args->put_Handled(TRUE);
             if (on_new_window_) on_new_window_(webview_id_, url);
@@ -220,7 +203,7 @@ void WebWindow::attach_handlers() {
             else if (kind == COREWEBVIEW2_PERMISSION_KIND_MICROPHONE) type = "microphone";
             LPWSTR raw = nullptr;
             args->get_Uri(&raw);
-            std::string origin = origin_from_url(narrow(raw));
+            std::string origin = origin_from_url(wide_to_utf8(raw));
             if (raw) CoTaskMemFree(raw);
             args->AddRef();
             on_permission_(origin, type, webview_id_, args);
@@ -229,7 +212,6 @@ void WebWindow::attach_handlers() {
           .Get(),
       &permission_token_);
 
-  // Context menu: use ICoreWebView2_11 if available; otherwise Settings AreDefaultContextMenusEnabled
   ComPtr<ICoreWebView2Settings> settings;
   if (SUCCEEDED(webview_->get_Settings(&settings)) && settings) {
     settings->put_AreDefaultContextMenusEnabled(context_menu_enabled_ ? TRUE : FALSE);
@@ -243,15 +225,9 @@ void WebWindow::resize_webview() {
   controller_->put_Bounds(rc);
 }
 
-void WebWindow::flush_pending_url() {
-  if (!webview_ready_ || !webview_) return;
-  if (pending_url_) {
-    last_url_ = *pending_url_;
-    webview_->Navigate(widen(*pending_url_).c_str());
-    pending_url_.reset();
-  } else if (last_url_) {
-    webview_->Navigate(widen(*last_url_).c_str());
-  }
+void WebWindow::navigate_if_ready() {
+  if (!webview_ready_ || !webview_ || !last_url_) return;
+  webview_->Navigate(utf8_to_wide(*last_url_).c_str());
 }
 
 void WebWindow::set_handlers(CloseHandler on_close, FocusHandler on_focus,
@@ -264,13 +240,13 @@ void WebWindow::set_handlers(CloseHandler on_close, FocusHandler on_focus,
   on_permission_ = std::move(on_permission);
 }
 
+void WebWindow::set_menu_command_handler(std::function<bool(UINT)> handler) {
+  on_menu_command_ = std::move(handler);
+}
+
 void WebWindow::load_url(const std::string& url) {
   last_url_ = url;
-  if (!webview_ready_ || !webview_) {
-    pending_url_ = url;
-    return;
-  }
-  webview_->Navigate(widen(url).c_str());
+  navigate_if_ready();
 }
 
 void WebWindow::reload() {
@@ -281,7 +257,7 @@ std::string WebWindow::current_url() const {
   if (webview_ready_ && webview_) {
     LPWSTR raw = nullptr;
     if (SUCCEEDED(webview_->get_Source(&raw)) && raw) {
-      std::string url = narrow(raw);
+      std::string url = wide_to_utf8(raw);
       CoTaskMemFree(raw);
       if (!url.empty() && url != "about:blank") return url;
     }
@@ -305,7 +281,6 @@ std::string WebWindow::rebuild(const std::string& new_webview_id) {
   }
   webview_ = nullptr;
   webview_id_ = new_webview_id;
-  if (last_url_) pending_url_ = last_url_;
   create_webview();
   return webview_id_;
 }
@@ -322,7 +297,7 @@ void WebWindow::set_context_menu_enabled(bool enabled) {
 
 void WebWindow::set_title(const std::string& title) {
   title_ = title;
-  if (hwnd_) SetWindowTextW(hwnd_, widen(title).c_str());
+  if (hwnd_) SetWindowTextW(hwnd_, utf8_to_wide(title).c_str());
 }
 
 void WebWindow::set_min_size(int width, int height) {
@@ -331,22 +306,17 @@ void WebWindow::set_min_size(int width, int height) {
 }
 
 void WebWindow::show() {
-  if (!hwnd_) return;
-  ShowWindow(hwnd_, SW_SHOW);
-  visible_ = true;
+  if (hwnd_) ShowWindow(hwnd_, SW_SHOW);
 }
 
 void WebWindow::hide() {
-  if (!hwnd_) return;
-  ShowWindow(hwnd_, SW_HIDE);
-  visible_ = false;
+  if (hwnd_) ShowWindow(hwnd_, SW_HIDE);
 }
 
 void WebWindow::raise() {
   if (!hwnd_) return;
   ShowWindow(hwnd_, SW_SHOW);
   SetForegroundWindow(hwnd_);
-  visible_ = true;
 }
 
 void WebWindow::iconize(bool iconize) {
@@ -365,12 +335,7 @@ void WebWindow::set_icon(HICON icon) {
 }
 
 void WebWindow::set_menubar(HMENU menu) {
-  menubar_ = menu;
   if (hwnd_) SetMenu(hwnd_, menu);
-}
-
-void WebWindow::set_menu_command_handler(std::function<bool(UINT)> handler) {
-  on_menu_command_ = std::move(handler);
 }
 
 void WebWindow::eval_js(const std::string& script, std::function<void(jsonutil::Json)> cb) {
@@ -380,26 +345,19 @@ void WebWindow::eval_js(const std::string& script, std::function<void(jsonutil::
   }
   auto cb_ptr = std::make_shared<std::function<void(jsonutil::Json)>>(std::move(cb));
   webview_->ExecuteScript(
-      widen(script).c_str(),
+      utf8_to_wide(script).c_str(),
       Callback<ICoreWebView2ExecuteScriptCompletedHandler>(
           [cb_ptr](HRESULT error, LPCWSTR result_json) -> HRESULT {
             if (FAILED(error)) {
               (*cb_ptr)(jsonutil::Json{{"error", "execute script failed"}});
               return S_OK;
             }
-            try {
-              std::string narrow_json;
-              if (result_json) {
-                int n = WideCharToMultiByte(CP_UTF8, 0, result_json, -1, nullptr, 0, nullptr, nullptr);
-                narrow_json.assign(n > 0 ? n - 1 : 0, '\0');
-                if (n > 1)
-                  WideCharToMultiByte(CP_UTF8, 0, result_json, -1, narrow_json.data(), n, nullptr,
-                                      nullptr);
-              }
-              auto parsed = jsonutil::Json::parse(narrow_json.empty() ? "null" : narrow_json);
+            auto text = wide_to_utf8(result_json);
+            auto parsed = jsonutil::parse(text.empty() ? "null" : text);
+            if (parsed.is_null() && !text.empty() && text != "null") {
+              (*cb_ptr)(jsonutil::Json{{"error", "invalid script result json"}});
+            } else {
               (*cb_ptr)(parsed);
-            } catch (...) {
-              (*cb_ptr)(jsonutil::Json(nullptr));
             }
             return S_OK;
           })

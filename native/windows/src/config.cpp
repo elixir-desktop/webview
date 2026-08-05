@@ -1,6 +1,5 @@
 #include "config.hpp"
-
-#include "win_prefix.hpp"
+#include "win_util.hpp"
 
 #include <cctype>
 #include <cstdio>
@@ -8,25 +7,6 @@
 #include <sstream>
 
 namespace {
-
-std::string dirname_of(const std::string& path) {
-  auto pos = path.find_last_of("/\\");
-  if (pos == std::string::npos) return ".";
-  if (pos == 0) return path.substr(0, 1);
-  return path.substr(0, pos);
-}
-
-std::string join_path(const std::string& a, const std::string& b) {
-  if (a.empty()) return b;
-  char last = a.back();
-  if (last == '/' || last == '\\') return a + b;
-  return a + "\\" + b;
-}
-
-bool file_exists(const std::string& path) {
-  DWORD attrs = GetFileAttributesA(path.c_str());
-  return attrs != INVALID_FILE_ATTRIBUTES && !(attrs & FILE_ATTRIBUTE_DIRECTORY);
-}
 
 class Ini {
  public:

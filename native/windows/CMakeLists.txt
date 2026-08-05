@@ -64,7 +64,6 @@ target_link_libraries(DesktopWebView PRIVATE
   advapi32
   shlwapi
   version
-  crypt32
 )
 
 install(TARGETS DesktopWebView RUNTIME DESTINATION bin)
