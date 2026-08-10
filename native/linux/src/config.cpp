@@ -115,6 +115,13 @@ HostConfig HostConfig::parse(int argc, char** argv) {
         cfg.beam_path = body.substr(10);
       } else if (body.rfind("beam-app=", 0) == 0) {
         cfg.beam_app = body.substr(9);
+      } else if (body.rfind("restart-beam=", 0) == 0) {
+        auto v = body.substr(13);
+        cfg.restart_beam = !(v == "false" || v == "0");
+      } else if (body.rfind("max-restart-attempts=", 0) == 0) {
+        cfg.restart_max_attempts = std::stoi(body.substr(21));
+      } else if (body.rfind("restart-backoff-ms=", 0) == 0) {
+        cfg.restart_backoff_ms = static_cast<uint32_t>(std::stoul(body.substr(19)));
       } else {
         fprintf(stderr, "unknown --edw flag: %s\n", a.c_str());
       }
@@ -156,6 +163,15 @@ void HostConfig::apply_ini() {
   if (auto v = ini.get("network", "port")) port = static_cast<uint16_t>(std::stoi(*v));
   if (auto v = ini.get("lifetime", "mode")) {
     lifetime = (*v == "coupled") ? Lifetime::Coupled : Lifetime::Reconnect;
+  }
+  if (auto v = ini.get("lifetime", "restart_beam")) {
+    restart_beam = !(*v == "false" || *v == "0");
+  }
+  if (auto v = ini.get("lifetime", "restart_max_attempts")) {
+    restart_max_attempts = std::stoi(*v);
+  }
+  if (auto v = ini.get("lifetime", "restart_backoff_ms")) {
+    restart_backoff_ms = static_cast<uint32_t>(std::stoul(*v));
   }
   if (auto v = ini.get("beam", "enabled")) {
     beam_enabled = !(*v == "false" || *v == "0");

@@ -22,6 +22,10 @@ struct HostConfig {
   bool beam_enabled = true;
   std::map<std::string, std::string> extra_env;
   std::vector<std::string> forwarded_argv;
+  // Host-driven BEAM restart policy (replaces heart on host-first bundles).
+  bool restart_beam = true;
+  int restart_max_attempts = 0;
+  uint32_t restart_backoff_ms = 500;
 
   static HostConfig parse(int argc, char** argv);
 

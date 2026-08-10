@@ -14,6 +14,15 @@ struct HostConfig {
     var beamEnabled: Bool = true
     var extraEnv: [String: String] = [:]
     var forwardedArgv: [String] = []
+    /// When true, the host re-spawns BEAM after it exits unexpectedly.
+    /// Driven by the host-first macOS bundle: replaces the `heart` watchdog.
+    var restartBeam: Bool = true
+    /// Maximum number of consecutive BEAM respawns before the host gives up.
+    /// `0` means retry indefinitely.
+    var restartMaxAttempts: Int = 0
+    /// Initial backoff between respawn attempts (ms). Doubles per attempt,
+    /// capped at 5000 ms.
+    var restartBackoffMs: UInt32 = 500
 
     enum Lifetime: String {
         case reconnect
@@ -53,6 +62,12 @@ struct HostConfig {
                     cfg.beamPath = String(body.dropFirst(10))
                 } else if body.hasPrefix("beam-app=") {
                     cfg.beamApp = String(body.dropFirst(9))
+                } else if body.hasPrefix("restart-beam=") {
+                    cfg.restartBeam = (body.dropFirst(13) != "false" && body.dropFirst(13) != "0")
+                } else if body.hasPrefix("max-restart-attempts=") {
+                    cfg.restartMaxAttempts = Int(body.dropFirst(21)) ?? 0
+                } else if body.hasPrefix("restart-backoff-ms=") {
+                    cfg.restartBackoffMs = UInt32(body.dropFirst(19)) ?? 500
                 } else {
                     fputs("unknown --edw flag: \(a)\n", stderr)
                 }
@@ -75,6 +90,15 @@ struct HostConfig {
         if let v = ini["network", "host"] { host = v }
         if let v = ini["network", "port"], let p = UInt16(v) { port = p }
         if let v = ini["lifetime", "mode"], let l = Lifetime(rawValue: v) { lifetime = l }
+        if let v = ini["lifetime", "restart_beam"] {
+            restartBeam = !(v == "false" || v == "0")
+        }
+        if let v = ini["lifetime", "restart_max_attempts"], let n = Int(v) {
+            restartMaxAttempts = n
+        }
+        if let v = ini["lifetime", "restart_backoff_ms"], let n = UInt32(v) {
+            restartBackoffMs = n
+        }
         if let v = ini["beam", "enabled"] {
             beamEnabled = !(v == "false" || v == "0")
         }
