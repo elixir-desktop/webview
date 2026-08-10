@@ -13,6 +13,7 @@
 #include <fstream>
 #include <sys/utsname.h>
 #include <unistd.h>
+#include <algorithm>
 
 namespace {
 
@@ -45,6 +46,10 @@ JsonObject* params_obj(JsonNode* params) {
 HostController::HostController(HostConfig config) : config_(std::move(config)) {}
 
 HostController::~HostController() {
+  if (restart_timer_id_ != 0) {
+    g_source_remove(restart_timer_id_);
+    restart_timer_id_ = 0;
+  }
   if (beam_pid_ > 0) {
     kill(beam_pid_, SIGTERM);
     beam_pid_ = 0;
@@ -115,6 +120,7 @@ bool HostController::start() {
 void HostController::client_disconnected() {
   // BEAM-first/dev (`--edw-no-beam`): exit with the Elixir client.
   if (config_.lifetime == Lifetime::Coupled || config_.no_beam) {
+    quit_initiated_ = true;
     if (beam_pid_ > 0) {
       kill(beam_pid_, SIGTERM);
       beam_pid_ = 0;
@@ -183,7 +189,66 @@ void HostController::spawn_beam() {
     fprintf(stderr, "edw: failed to spawn beam: %s\n", err ? err->message : "unknown");
     if (err) g_error_free(err);
     beam_pid_ = 0;
+    return;
   }
+  // Reset counter when we successfully spawn a fresh BEAM.
+  beam_restart_attempts_ = 0;
+  // Watch the child; when BEAM exits, decide whether to respawn it (mirrors
+  // the Swift HostController.terminationHandler path).
+  g_child_watch_add(beam_pid_,
+                    +[](GPid pid, gint /*status*/, gpointer user_data) -> void {
+                      auto* self = static_cast<HostController*>(user_data);
+                      self->beam_did_exit();
+                    },
+                    this);
+}
+
+void HostController::beam_did_exit() {
+  beam_pid_ = 0;
+  if (restart_timer_id_ != 0) {
+    g_source_remove(restart_timer_id_);
+    restart_timer_id_ = 0;
+  }
+  if (quit_initiated_) {
+    return;
+  }
+  if (expected_beam_exit_) {
+    expected_beam_exit_ = false;
+    return;
+  }
+  if (should_respawn_beam()) {
+    schedule_beam_respawn();
+  }
+}
+
+bool HostController::should_respawn_beam() {
+  if (!config_.restart_beam) return false;
+  if (config_.restart_max_attempts > 0 &&
+      beam_restart_attempts_ >= config_.restart_max_attempts) {
+    fprintf(stderr, "edw: beam exited; restart limit reached, terminating host\n");
+    g_main_loop_quit(nullptr);
+    return false;
+  }
+  return true;
+}
+
+void HostController::schedule_beam_respawn() {
+  beam_restart_attempts_ += 1;
+  int shift = std::min(beam_restart_attempts_ - 1, 4);
+  uint32_t multiplier = static_cast<uint32_t>(1) << shift;
+  uint32_t backoff = std::min(config_.restart_backoff_ms * multiplier, 5000u);
+
+  restart_timer_id_ = g_timeout_add(
+      static_cast<guint>(backoff),
+      +[](gpointer user_data) -> gboolean {
+        auto* self = static_cast<HostController*>(user_data);
+        self->restart_timer_id_ = 0;
+        if (self->config_.beam_enabled && !self->config_.no_beam) {
+          self->spawn_beam();
+        }
+        return G_SOURCE_REMOVE;
+      },
+      this);
 }
 
 void HostController::handle_request(JsonNode* id, const std::string& method, JsonNode* params,
@@ -796,6 +861,13 @@ JsonNode* HostController::dispatch(const std::string& method, JsonNode* params) 
     uname(&u);
     std::string desc = std::string("Linux ") + u.release;
     return jsonutil::string_node(desc);
+  }
+  if (method == "system.prepare_quit") {
+    // Elixir signals a clean shutdown. Mark so the next BEAM exit is not
+    // treated as a crash and does not trigger host-driven respawn.
+    quit_initiated_ = true;
+    expected_beam_exit_ = true;
+    return jsonutil::bool_node(true);
   }
   if (method == "system.set_permission_policy") {
     auto origin = jsonutil::object_get_string(p, "origin");

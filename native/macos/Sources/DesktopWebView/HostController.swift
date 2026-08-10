@@ -27,6 +27,13 @@ final class HostController: NSObject {
     private(set) var quitRequested = false
     /// When true, `applicationShouldTerminate` may finish tearing down the host.
     private(set) var readyToTerminate = false
+    /// Set by `system.prepare_quit` so a BEAM exit during this window is
+    /// treated as a clean shutdown (no host-driven respawn).
+    private var expectedBeamExitUntil: Date? = nil
+    /// Number of times the host has respawned BEAM in this process's lifetime.
+    private var beamRestartAttempts: Int = 0
+    /// Pending restart timer; cancelled if the host quits before it fires.
+    private var restartTimer: DispatchSourceTimer? = nil
 
     init(config: HostConfig) {
         self.config = config
@@ -104,6 +111,10 @@ final class HostController: NSObject {
 
     func finishQuit() {
         readyToTerminate = true
+        restartTimer?.cancel()
+        restartTimer = nil
+        // Force the host-kills-BEAM path into the "do not respawn" branch.
+        expectedBeamExitUntil = Date().addingTimeInterval(3.0)
         beamProcess?.terminate()
         NSApp.reply(toApplicationShouldTerminate: true)
         NSApp.terminate(nil)
@@ -136,12 +147,56 @@ final class HostController: NSObject {
             ($0 as NSString).isAbsolutePath ? $0 : (root as NSString).appendingPathComponent($0)
         } ?? beamDir
         proc.currentDirectoryURL = URL(fileURLWithPath: wd)
+        proc.terminationHandler = { [weak self] _ in
+            DispatchQueue.main.async { self?.beamDidExit() }
+        }
         do {
             try proc.run()
             beamProcess = proc
         } catch {
             fputs("edw: failed to spawn beam: \(error)\n", stderr)
         }
+    }
+
+    /// Handle BEAM exit while the host is still alive. Decide whether to respawn
+    /// based on whether the exit looked intentional (`system.prepare_quit`)
+    /// and whether we have a maximum-attempts budget left.
+    private func beamDidExit() {
+        beamProcess = nil
+        restartTimer?.cancel()
+        restartTimer = nil
+        if quitRequested {
+            // Host initiated the quit; do not respawn.
+            return
+        }
+        if let until = expectedBeamExitUntil, until > Date() {
+            // Elixir sent `system.prepare_quit` and exited within the window.
+            // Treat as a clean shutdown.
+            return
+        }
+        if !config.restartBeam {
+            return
+        }
+        if config.restartMaxAttempts > 0, beamRestartAttempts >= config.restartMaxAttempts {
+            fputs("edw: beam exited; restart limit reached, terminating host\n", stderr)
+            NSApp.terminate(nil)
+            return
+        }
+        beamRestartAttempts += 1
+        let shift = min(beamRestartAttempts - 1, 4)
+        let multiplier = UInt32(1 << shift)
+        let backoff = min(config.restartBackoffMs * multiplier, 5_000)
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.schedule(deadline: .now() + .milliseconds(Int(backoff)))
+        timer.setEventHandler { [weak self] in
+            guard let self else { return }
+            self.restartTimer = nil
+            if self.config.beamEnabled && !self.config.noBeam {
+                self.spawnBeam()
+            }
+        }
+        restartTimer = timer
+        timer.resume()
     }
 
     private func firstBin(in dir: String) -> String? {
@@ -385,8 +440,10 @@ final class HostController: NSObject {
             let v = ProcessInfo.processInfo.operatingSystemVersionString
             return .string("macOS \(v)")
         case "system.prepare_quit":
-            // Elixir is about to halt; mark so TCP disconnect finishes host teardown.
+            // Elixir is about to halt; mark so the upcoming BEAM exit is treated
+            // as a clean shutdown (no host-driven respawn).
             quitRequested = true
+            expectedBeamExitUntil = Date().addingTimeInterval(3.0)
             return .bool(true)
         case "system.set_permission_policy":
             guard let origin = params?["origin"]?.stringValue else { throw HostError(-32602, "origin") }
