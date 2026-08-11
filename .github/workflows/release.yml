@@ -62,4 +62,26 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # windows: add when native/windows host exists — attach DesktopWebView-windows-* to the same draft release
+  windows:
+    name: Windows x64 artifact
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build host
+        shell: pwsh
+        run: .\scripts\build_windows.ps1
+      - name: Pack
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Copy-Item priv\native\windows\DesktopWebView.exe dist\DesktopWebView-windows-x64.exe
+          $hash = (Get-FileHash -Algorithm SHA256 dist\DesktopWebView-windows-x64.exe).Hash.ToLower()
+          Set-Content -NoNewline -Path dist\DesktopWebView-windows-x64.exe.sha256 -Value "$hash  DesktopWebView-windows-x64.exe"
+      - uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          files: |
+            dist/DesktopWebView-windows-x64.exe
+            dist/DesktopWebView-windows-x64.exe.sha256
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
