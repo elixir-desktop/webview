@@ -319,7 +319,7 @@ Release binaries used by apps must leave this off. If called while disabled → 
 | `test.echo` | any | same params |
 | `test.capabilities` | — | capability map |
 | `test.window.list` | — | `[{window_id, webview_id, title, url}]` |
-| `test.menu.list` | — | `[{title, items:[{label, key, modifiers, action}]}]` snapshot of `NSApp.mainMenu` |
+| `test.menu.list` | — | `[{title, items:[{label, key, modifiers, action}]}]` snapshot of the host's main menu. macOS-only; other hosts return `-32601` until they implement the equivalent. |
 | `test.webview.eval` | `webview_id`, `script` | eval result (JSON-compatible) |
 | `test.permission.simulate` | `origin`, `type` | triggers `permission.request` |
 | `test.disconnect` | — | host closes the TCP connection |
