@@ -190,4 +190,30 @@ defmodule DesktopWebview.E2ETest do
     assert {:ok, list} = Transport.call("test.window.list", %{})
     assert length(list) >= 2
   end
+
+  test "default edit menu is installed with copy/paste/cut/selectAll" do
+    assert {:ok, menus} = Transport.call("test.menu.list", %{})
+    assert is_list(menus)
+
+    edit = Enum.find(menus, &(&1["title"] == "Edit"))
+    assert edit, "Edit menu missing from NSApp.mainMenu: #{inspect(menus)}"
+
+    by_label = Map.new(edit["items"], fn item -> {item["label"], item} end)
+
+    expected = %{
+      "Cut" => {"x", "cut:"},
+      "Copy" => {"c", "copy:"},
+      "Paste" => {"v", "paste:"},
+      "Select All" => {"a", "selectAll:"}
+    }
+
+    for {label, {key, action}} <- expected do
+      item = Map.get(by_label, label)
+      assert item, "Edit menu missing item #{label}; got #{inspect(Map.keys(by_label))}"
+      assert item["key"] == key, "#{label} key equivalent expected #{key} got #{item["key"]}"
+
+      assert item["action"] == action,
+             "#{label} action expected #{action} got #{item["action"]}"
+    end
+  end
 end

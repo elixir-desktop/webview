@@ -121,6 +121,13 @@ section disagree, **fix the host** and keep this section as the contract.
 
 ### Menus and tray
 
+- The macOS host installs a default `Edit` submenu on the main menu (Undo, Redo,
+  Cut, Copy, Paste, Delete, Select All) with the standard `Cmd+Z`, `Cmd+Shift+Z`,
+  `Cmd+X`, `Cmd+C`, `Cmd+V`, `Cmd+A` accelerators. Actions are routed through the
+  responder chain, so the first responder (typically the WKWebView's text-input
+  view) handles them. Other platform hosts SHOULD install an equivalent default
+  Edit menu so keyboard accelerators work in their web engines too
+  ([porting.md](porting.md)).
 - `menu.create` / `menu.update` take a full DOM snapshot (not incremental diffs).
   After `menu.update`, hosts MUST re-bind any tray that references that `menu_id`
   (Desktop.Menu mounts empty then updates on mount).
@@ -312,6 +319,7 @@ Release binaries used by apps must leave this off. If called while disabled → 
 | `test.echo` | any | same params |
 | `test.capabilities` | — | capability map |
 | `test.window.list` | — | `[{window_id, webview_id, title, url}]` |
+| `test.menu.list` | — | `[{title, items:[{label, key, modifiers, action}]}]` snapshot of `NSApp.mainMenu` |
 | `test.webview.eval` | `webview_id`, `script` | eval result (JSON-compatible) |
 | `test.permission.simulate` | `origin`, `type` | triggers `permission.request` |
 | `test.disconnect` | — | host closes the TCP connection |
