@@ -34,7 +34,10 @@ Do **not** copy macOS UI code into other platforms — share only the protocol.
 4. **One window + webview** — `window.open`, `webview.load_url` / `reload` / `current_url`
 5. **Close veto** — native close → `event.window.close_requested`; do not destroy until Elixir says so
 6. **Multi-window** — resource ids on one TCP connection
-7. **Menus / tray / icons / notifications**
+7. **Menus / tray / icons / notifications** — including a default `Edit`
+   submenu (Undo, Redo, Cut, Copy, Paste, Delete, Select All) with the standard
+   `Cmd+X/C/V/A` accelerators. Without it, web engines do not receive copy/paste
+   keyboard events.
 8. **Permissions + mic/camera** (hybrid policy)
 9. **OS events** — reopen / open URL / open file where the OS supports them
 10. **Packaged BEAM spawn** + **CI artifact** on tag draft releases

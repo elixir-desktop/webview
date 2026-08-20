@@ -22,6 +22,7 @@ manual-only with justification).
 | New window → external open | done | |
 | Context menu disable | done | |
 | Menubar from DOM | done | |
+| Default Edit menu (Cmd+C/V/X/A) | done | E2E via test.menu.list |
 | Tray / status item | done | |
 | Apple menu | done | |
 | Notifications | done | |

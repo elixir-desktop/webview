@@ -64,6 +64,10 @@ final class HostController: NSObject {
         }
 
         NSApp.setActivationPolicy(.regular)
+        // Default Edit menu is required for keyboard accelerators (Cmd+C/V/X/A) to
+        // reach the WKWebView responder chain. installMainMenuPreservingApple keeps
+        // any pre-existing Apple menu item across this call.
+        installMainMenuPreservingApple(extraItems: [buildEditMenu()])
         // Probe OS mic TCC early so the usage string from embedded Info.plist can
         // surface a System Settings prompt before CallLive getUserMedia.
         AVCaptureDevice.requestAccess(for: .audio) { _ in }
@@ -328,22 +332,27 @@ final class HostController: NSObject {
             return .bool(true)
         case "window.set_menubar":
             let w = try win(params)
-            if let menuId = params?["menu_id"]?.stringValue, let menu = menus[menuId] {
-                // AppKit always titles the *first* main-menu item with the process
-                // name. Keep the application (Apple) menu first, then app menus —
-                // otherwise "Zones" is shown as "DesktopWebView" and a later Apple
-                // insert yields two process-named menus.
-                let bar = NSMenu()
-                if let apple = ensureAppleMenuItem() {
-                    apple.menu?.removeItem(apple)
-                    bar.addItem(apple)
-                }
-                for item in menu.items {
-                    bar.addItem(item.copy() as! NSMenuItem)
-                }
-                w.window.menu = bar
-                NSApp.mainMenu = bar
+            // No menu_id means "don't touch the main menu"; the Edit menu
+            // installed at start() (or by set_menubar earlier) remains active.
+            guard let menuId = params?["menu_id"]?.stringValue, let menu = menus[menuId] else {
+                return .bool(true)
             }
+            // AppKit always titles the *first* main-menu item with the process
+            // name. Keep the application (Apple) menu first, then the default
+            // Edit menu (so Cmd+C/V/X/A accelerators remain active), then the
+            // user-supplied menubar items. Installing the Edit menu from a copy
+            // is safe — each window gets its own mainMenu instance.
+            let bar = NSMenu()
+            if let apple = ensureAppleMenuItem() {
+                apple.menu?.removeItem(apple)
+                bar.addItem(apple)
+            }
+            bar.addItem(buildEditMenu())
+            for item in menu.items {
+                bar.addItem(item.copy() as! NSMenuItem)
+            }
+            w.window.menu = bar
+            NSApp.mainMenu = bar
             return .bool(true)
         case "window.iconize":
             let w = try win(params)
@@ -528,6 +537,27 @@ final class HostController: NSObject {
                 ])
             }
             return .ok(id: id, result: .array(list))
+        case "test.menu.list":
+            // Snapshot the current main menu (NSApp.mainMenu) so the E2E suite
+            // can assert that the host has installed a default Edit menu with
+            // the expected keyboard accelerators. Items without an action (the
+            // submenu root) are reported as `action = ""`.
+            let items: [JSONValue] = (NSApp.mainMenu?.items ?? []).map { item in
+                let sub: [JSONValue] = (item.submenu?.items ?? []).map { subItem in
+                    let action = subItem.action.map(NSStringFromSelector) ?? ""
+                    return .object([
+                        "label": .string(subItem.title),
+                        "key": .string(subItem.keyEquivalent),
+                        "modifiers": .number(Double(subItem.keyEquivalentModifierMask.rawValue)),
+                        "action": .string(action)
+                    ])
+                }
+                return .object([
+                    "title": .string(item.title),
+                    "items": .array(sub)
+                ])
+            }
+            return .ok(id: id, result: .array(items))
         case "test.webview.eval":
             guard let wvId = params?["webview_id"]?.stringValue,
                   let script = params?["script"]?.stringValue,
@@ -749,6 +779,56 @@ final class HostController: NSObject {
         installMainMenuPreservingApple(extraItems: Array(NSApp.mainMenu?.items.dropFirst() ?? []))
         appleMenuSet = true
         return .bool(true)
+    }
+
+    /// Default Edit menu with the standard macOS keyboard accelerators. The
+    /// actions are wired to the responder chain (`target = nil`), so WKWebView's
+    /// internal text input views implement them and receive `copy:` / `cut:` /
+    /// `paste:` / `selectAll:` etc. when the user presses Cmd+C/V/X/A. Without
+    /// this menu installed, `performKeyEquivalent` never fires the selectors.
+    private func buildEditMenu() -> NSMenuItem {
+        let menu = NSMenu(title: "Edit")
+        let cmd: NSEvent.ModifierFlags = .command
+
+        let undo = NSMenuItem(title: "Undo", action: #selector(UndoManager.undo), keyEquivalent: "z")
+        undo.keyEquivalentModifierMask = cmd
+        undo.target = nil
+        menu.addItem(undo)
+
+        let redo = NSMenuItem(title: "Redo", action: #selector(UndoManager.redo), keyEquivalent: "z")
+        redo.keyEquivalentModifierMask = cmd.union(.shift)
+        redo.target = nil
+        menu.addItem(redo)
+
+        menu.addItem(NSMenuItem.separator())
+
+        let cut = NSMenuItem(title: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        cut.keyEquivalentModifierMask = cmd
+        cut.target = nil
+        menu.addItem(cut)
+
+        let copy = NSMenuItem(title: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        copy.keyEquivalentModifierMask = cmd
+        copy.target = nil
+        menu.addItem(copy)
+
+        let paste = NSMenuItem(title: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        paste.keyEquivalentModifierMask = cmd
+        paste.target = nil
+        menu.addItem(paste)
+
+        let delete = NSMenuItem(title: "Delete", action: #selector(NSText.delete(_:)), keyEquivalent: String(Character(UnicodeScalar(NSBackspaceCharacter)!)))
+        delete.target = nil
+        menu.addItem(delete)
+
+        let selectAll = NSMenuItem(title: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        selectAll.keyEquivalentModifierMask = cmd
+        selectAll.target = nil
+        menu.addItem(selectAll)
+
+        let editItem = NSMenuItem(title: "Edit", action: nil, keyEquivalent: "")
+        editItem.submenu = menu
+        return editItem
     }
 
     /// Application menu (About / Quit). Always the first main-menu item on macOS.
