@@ -85,3 +85,30 @@ jobs:
           WEBKIT_DISABLE_DMABUF_RENDERER: "1"
           WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS: "1"
           LIBGL_ALWAYS_SOFTWARE: "1"
+
+  windows-e2e:
+    name: Windows host + E2E
+    runs-on: windows-latest
+    env:
+      NO_WX: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: "26"
+          elixir-version: "1.18"
+      - name: Checkout desktop (path dep)
+        uses: actions/checkout@v4
+        with:
+          repository: elixir-desktop/desktop
+          path: desktop
+      - name: Build host
+        shell: pwsh
+        run: .\scripts\build_windows.ps1
+      - run: mix deps.get
+      - name: E2E
+        shell: pwsh
+        run: mix test
+        env:
+          DESKTOP_WEBVIEW_BINARY: ${{ github.workspace }}\priv\native\windows\DesktopWebView.exe
+          WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: --disable-gpu --disable-gpu-compositing

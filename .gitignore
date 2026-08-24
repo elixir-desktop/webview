@@ -13,7 +13,9 @@ desktop_webview-*.tar
 native/macos/.build/
 native/macos/Package.resolved
 native/linux/build/
+native/windows/build/
 priv/native/macos/DesktopWebView
 priv/native/linux/DesktopWebView
+priv/native/windows/DesktopWebView.exe
 .DS_Store
 *.swp
