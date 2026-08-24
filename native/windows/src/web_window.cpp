@@ -142,7 +142,7 @@ void WebWindow::create_webview() {
                       resize_webview();
                       attach_handlers();
                       navigate_if_ready();
-                      if (!last_url_) flush_pending_evals();
+                      flush_pending_evals();
                       return S_OK;
                     })
                     .Get());

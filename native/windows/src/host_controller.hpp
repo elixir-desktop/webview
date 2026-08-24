@@ -46,6 +46,7 @@ class HostController {
 
  private:
   void client_disconnected();
+  void reset_session();
   void spawn_beam();
   std::string next_id(const std::string& prefix);
 

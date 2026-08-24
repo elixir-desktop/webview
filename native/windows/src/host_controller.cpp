@@ -145,6 +145,7 @@ bool HostController::on_menu_command(UINT cmd) {
 }
 
 void HostController::client_disconnected() {
+  reset_session();
   if (config_.lifetime == Lifetime::Coupled || config_.no_beam) {
     if (beam_process_) {
       TerminateProcess(beam_process_, 0);
@@ -153,6 +154,22 @@ void HostController::client_disconnected() {
     }
     ExitProcess(0);
   }
+}
+
+void HostController::reset_session() {
+  for (auto& [_, tray] : trays_) {
+    if (tray.registered) Shell_NotifyIconW(NIM_DELETE, &tray.nid);
+  }
+  trays_.clear();
+  windows_.clear();
+  webviews_.clear();
+  for (auto& [_, menu] : menus_) destroy_menu_entry(menu);
+  menus_.clear();
+  for (auto& [_, icon] : icons_) {
+    if (icon.icon) DestroyIcon(icon.icon);
+  }
+  icons_.clear();
+  permission_policy_.clear();
   initialized_ = false;
 }
 
@@ -785,6 +802,17 @@ jsonutil::Json HostController::handle_test(const std::string& method, const json
                        {"url", w->current_url()}});
     }
     return jsonutil::rpc_ok(id, items);
+  }
+  if (method == "test.tray.list") {
+    jsonutil::Json items = jsonutil::Json::array();
+    for (auto& [tid, _] : trays_) {
+      items.push_back({{"tray_id", tid}});
+    }
+    return jsonutil::rpc_ok(id, items);
+  }
+  if (method == "test.session.reset") {
+    reset_session();
+    return jsonutil::rpc_ok(id, true);
   }
   if (method == "test.webview.eval") {
     auto wv = jsonutil::get_string(params, "webview_id");
