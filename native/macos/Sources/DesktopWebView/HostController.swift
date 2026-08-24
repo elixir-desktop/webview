@@ -34,6 +34,9 @@ final class HostController: NSObject {
     private var beamRestartAttempts: Int = 0
     /// Pending restart timer; cancelled if the host quits before it fires.
     private var restartTimer: DispatchSourceTimer? = nil
+    /// When true, `applicationShouldTerminate` cancels so last-window teardown
+    /// during session reset cannot quit the host (CI / `--edw-no-beam`).
+    var suppressTerminate = false
 
     init(config: HostConfig) {
         self.config = config
@@ -109,15 +112,19 @@ final class HostController: NSObject {
     /// Drop all client-owned native UI. Idempotent. Does not quit the host or
     /// change BEAM respawn bookkeeping.
     func resetSession() {
+        suppressTerminate = true
         for item in trays.values {
             NSStatusBar.system.removeStatusItem(item)
         }
         trays.removeAll()
         trayMenus.removeAll()
 
+        // Do not call NSWindow.close(): last-window close can still invoke
+        // applicationShouldTerminate on some runners and drop the RPC socket.
         for w in Array(windows.values) {
             w.window.delegate = nil
-            w.window.close()
+            w.window.orderOut(nil)
+            w.window.contentView = nil
         }
         windows.removeAll()
         webviews.removeAll()
@@ -127,12 +134,15 @@ final class HostController: NSObject {
         icons.removeAll()
         permissionPolicy.removeAll()
 
-        if Bundle.main.bundleIdentifier != nil {
+        if Bundle.main.bundleURL.pathExtension == "app" {
             UNUserNotificationCenter.current().removeAllDeliveredNotifications()
         }
 
         initialized = false
         installMainMenuPreservingApple(extraItems: [buildEditMenu()])
+        DispatchQueue.main.async { [weak self] in
+            self?.suppressTerminate = false
+        }
     }
 
     /// Ask Elixir to shut down (`event.system.quit`). Used by Quit menu / Cmd+Q.
