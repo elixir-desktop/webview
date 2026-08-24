@@ -221,10 +221,11 @@ defmodule DesktopWebview.E2ETest do
 
     # JS eval fixture marker
     assert {:ok, result} =
-             Transport.call("test.webview.eval", %{
-               "webview_id" => vid,
-               "script" => "document.title"
-             })
+             Transport.call(
+               "test.webview.eval",
+               %{"webview_id" => vid, "script" => "document.title"},
+               15_000
+             )
 
     assert result == "EDW Media Fixture" or is_binary(result)
   end

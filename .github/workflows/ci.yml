@@ -111,3 +111,4 @@ jobs:
         run: mix test
         env:
           DESKTOP_WEBVIEW_BINARY: ${{ github.workspace }}\priv\native\windows\DesktopWebView.exe
+          WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: --disable-gpu --disable-gpu-compositing

@@ -1,6 +1,8 @@
 #include "web_window.hpp"
 #include "win_util.hpp"
 
+#include <WebView2EnvironmentOptions.h>
+
 #include <cstdio>
 
 using Microsoft::WRL::Callback;
@@ -113,8 +115,14 @@ void WebWindow::create_webview() {
   GetTempPathW(MAX_PATH, temp);
   std::wstring user_data = std::wstring(temp) + L"DesktopWebView\\" + utf8_to_wide(window_id_);
 
+  auto options = Microsoft::WRL::Make<CoreWebView2EnvironmentOptions>();
+  if (options) {
+    options->put_AdditionalBrowserArguments(
+        L"--disable-gpu --disable-gpu-compositing --disable-software-rasterizer");
+  }
+
   HRESULT hr = CreateCoreWebView2EnvironmentWithOptions(
-      nullptr, user_data.c_str(), nullptr,
+      nullptr, user_data.c_str(), options.Get(),
       Callback<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>(
           [this](HRESULT result, ICoreWebView2Environment* env) -> HRESULT {
             if (FAILED(result) || !env) {
@@ -138,6 +146,7 @@ void WebWindow::create_webview() {
                       }
                       controller_ = controller;
                       controller_->get_CoreWebView2(&webview_);
+                      controller_->put_IsVisible(TRUE);
                       webview_ready_ = true;
                       resize_webview();
                       attach_handlers();
