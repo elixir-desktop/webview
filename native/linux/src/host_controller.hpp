@@ -46,6 +46,7 @@ class HostController {
 
  private:
   void client_disconnected();
+  void reset_session();
   void spawn_beam();
   // Called from a glib child-watch source whenever BEAM exits.
   void beam_did_exit();

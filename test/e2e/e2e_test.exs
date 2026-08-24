@@ -127,6 +127,62 @@ defmodule DesktopWebview.E2ETest do
     assert {:ok, true} = Transport.call("menu.destroy", %{"menu_id" => mid})
   end
 
+  test "session reset wipes tray and windows" do
+    assert {:ok, %{"window_id" => wid, "webview_id" => _vid}} =
+             Transport.call("window.open", %{
+               "title" => "ResetMe",
+               "width" => 400,
+               "height" => 300
+             })
+
+    assert {:ok, %{"menu_id" => mid}} =
+             Transport.call("menu.create", %{
+               "kind" => "popup",
+               "dom" => %{"tag" => "menu", "attrs" => %{}, "children" => []}
+             })
+
+    assert {:ok, %{"icon_id" => iid}} = Transport.call("icon.create", %{})
+
+    assert {:ok, %{"tray_id" => tid}} =
+             Transport.call("tray.create", %{"icon_id" => iid, "menu_id" => mid})
+
+    assert {:ok, windows} = Transport.call("test.window.list", %{})
+    assert Enum.any?(windows, &(&1["window_id"] == wid))
+    assert {:ok, trays} = Transport.call("test.tray.list", %{})
+    assert Enum.any?(trays, &(&1["tray_id"] == tid))
+
+    assert {:ok, true} = Transport.call("test.session.reset", %{})
+
+    assert {:ok, []} = Transport.call("test.window.list", %{})
+    assert {:ok, []} = Transport.call("test.tray.list", %{})
+
+    assert {:ok, caps} =
+             Transport.call("initialize", %{"client" => "desktop_webview", "version" => "0.1.0"})
+
+    assert caps["protocol_version"] == 1
+
+    assert {:error, _} =
+             Transport.call("window.set_title", %{"window_id" => wid, "title" => "gone"})
+
+    assert {:ok, false} = Transport.call("tray.set_icon", %{"tray_id" => tid, "icon_id" => iid})
+
+    assert {:ok, %{"window_id" => wid2}} =
+             Transport.call("window.open", %{
+               "title" => "AfterReset",
+               "width" => 320,
+               "height" => 240
+             })
+
+    assert wid2 != wid
+    assert {:ok, %{"tray_id" => tid2}} = Transport.call("tray.create", %{})
+    assert tid2 != tid
+
+    assert {:ok, windows2} = Transport.call("test.window.list", %{})
+    assert length(windows2) == 1
+    assert {:ok, trays2} = Transport.call("test.tray.list", %{})
+    assert length(trays2) == 1
+  end
+
   test "permission policy and simulate" do
     assert {:ok, true} =
              Transport.call("system.set_permission_policy", %{

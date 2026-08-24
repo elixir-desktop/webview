@@ -12,6 +12,8 @@ final class RPCServer {
     var onRequest: ((JSONRPC.Request, @escaping (JSONRPC.Response) -> Void) -> Void)?
     var onNotification: ((JSONRPC.Notification) -> Void)?
     var onDisconnect: (() -> Void)?
+    /// Previous client replaced by a new TCP connection. Reset session UI only; do not quit.
+    var onSessionEnd: (() -> Void)?
 
     private(set) var port: UInt16 = 0
 
@@ -34,7 +36,9 @@ final class RPCServer {
     }
 
     private func accept(_ conn: NWConnection) {
-        // Single client: replace previous
+        // Single client: replace previous. Cancel does not fire onDisconnect
+        // (connection === conn fails), so notify session-end separately.
+        let replacing = connection != nil
         connection?.cancel()
         connection = conn
         buffer.removeAll()
@@ -50,6 +54,9 @@ final class RPCServer {
             default:
                 break
             }
+        }
+        if replacing {
+            onSessionEnd?()
         }
     }
 

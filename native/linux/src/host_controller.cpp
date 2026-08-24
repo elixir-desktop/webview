@@ -108,6 +108,14 @@ bool HostController::start() {
         },
         this);
   });
+  server_.set_session_end_handler([this]() {
+    g_idle_add(
+        +[](gpointer data) -> gboolean {
+          static_cast<HostController*>(data)->reset_session();
+          return G_SOURCE_REMOVE;
+        },
+        this);
+  });
 
   if (!server_.start(config_.host, config_.port)) return false;
 
@@ -118,6 +126,7 @@ bool HostController::start() {
 }
 
 void HostController::client_disconnected() {
+  reset_session();
   // BEAM-first/dev (`--edw-no-beam`): exit with the Elixir client.
   if (config_.lifetime == Lifetime::Coupled || config_.no_beam) {
     quit_initiated_ = true;
@@ -127,6 +136,22 @@ void HostController::client_disconnected() {
     }
     exit(0);
   }
+}
+
+void HostController::reset_session() {
+  trays_.clear();
+  windows_.clear();
+  webviews_.clear();
+  for (auto& [_, e] : menus_) {
+    if (e.menu) g_object_unref(e.menu);
+    if (e.action_group) g_object_unref(e.action_group);
+  }
+  menus_.clear();
+  for (auto& [_, icon] : icons_) {
+    if (icon.texture) g_object_unref(icon.texture);
+  }
+  icons_.clear();
+  permission_policy_.clear();
   initialized_ = false;
 }
 
@@ -204,6 +229,7 @@ void HostController::spawn_beam() {
 }
 
 void HostController::beam_did_exit() {
+  reset_session();
   beam_pid_ = 0;
   if (restart_timer_id_ != 0) {
     g_source_remove(restart_timer_id_);
@@ -665,6 +691,7 @@ JsonNode* HostController::dispatch(const std::string& method, JsonNode* params) 
   JsonObject* p = params_obj(params);
 
   if (method == "initialize") {
+    reset_session();
     initialized_ = true;
     JsonObject* caps = jsonutil::object_new();
     json_object_set_boolean_member(caps, "window", TRUE);
@@ -925,6 +952,22 @@ JsonNode* HostController::handle_test(const std::string& method, JsonNode* param
       items.push_back(n);
     }
     return jsonutil::rpc_ok(id, jsonutil::array_node(items));
+  }
+  if (method == "test.tray.list") {
+    std::vector<JsonNode*> items;
+    for (auto& [tid, _] : trays_) {
+      JsonObject* o = jsonutil::object_new();
+      json_object_set_string_member(o, "tray_id", tid.c_str());
+      JsonNode* n = json_node_alloc();
+      json_node_init_object(n, o);
+      json_object_unref(o);
+      items.push_back(n);
+    }
+    return jsonutil::rpc_ok(id, jsonutil::array_node(items));
+  }
+  if (method == "test.session.reset") {
+    reset_session();
+    return jsonutil::rpc_ok(id, jsonutil::bool_node(true));
   }
   if (method == "test.webview.eval") {
     JsonObject* p = params_obj(params);

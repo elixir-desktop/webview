@@ -15,6 +15,7 @@ class RpcServer {
   using ReplyFn = std::function<void(JsonNode* response_node)>;
   using RequestHandler = std::function<void(JsonNode* id, const std::string& method, JsonNode* params, ReplyFn reply)>;
   using DisconnectHandler = std::function<void()>;
+  using SessionEndHandler = std::function<void()>;
   using PendingCallback = std::function<void(JsonNode* result)>;
 
   RpcServer();
@@ -25,6 +26,7 @@ class RpcServer {
 
   void set_request_handler(RequestHandler h) { on_request_ = std::move(h); }
   void set_disconnect_handler(DisconnectHandler h) { on_disconnect_ = std::move(h); }
+  void set_session_end_handler(SessionEndHandler h) { on_session_end_ = std::move(h); }
 
   void send_node(JsonNode* node);  // takes ownership
   void notify(const std::string& method, JsonNode* params);  // takes ownership of params
@@ -47,5 +49,6 @@ class RpcServer {
   std::map<std::string, PendingCallback> pending_;
   RequestHandler on_request_;
   DisconnectHandler on_disconnect_;
+  SessionEndHandler on_session_end_;
   gulong incoming_handler_id_ = 0;
 };

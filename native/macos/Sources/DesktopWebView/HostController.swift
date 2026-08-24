@@ -51,6 +51,11 @@ final class HostController: NSObject {
                 self?.clientDisconnected()
             }
         }
+        server.onSessionEnd = { [weak self] in
+            DispatchQueue.main.async {
+                self?.resetSession()
+            }
+        }
         try server.start(host: config.host, port: config.port)
 
         // Wait briefly for port assignment
@@ -91,6 +96,7 @@ final class HostController: NSObject {
     }
 
     private func clientDisconnected() {
+        resetSession()
         // BEAM-first/dev (`--edw-no-beam`): the Elixir node owns the host. When it
         // disconnects the UI must go away — reconnect only makes sense when the
         // host owns BEAM and can accept a new client.
@@ -98,8 +104,35 @@ final class HostController: NSObject {
             finishQuit()
             return
         }
-        // Host-first + reconnect: keep windows; client will re-initialize
+    }
+
+    /// Drop all client-owned native UI. Idempotent. Does not quit the host or
+    /// change BEAM respawn bookkeeping.
+    func resetSession() {
+        for item in trays.values {
+            NSStatusBar.system.removeStatusItem(item)
+        }
+        trays.removeAll()
+        trayMenus.removeAll()
+
+        for w in Array(windows.values) {
+            w.window.delegate = nil
+            w.window.close()
+        }
+        windows.removeAll()
+        webviews.removeAll()
+
+        menus.removeAll()
+        menuOnclicks.removeAll()
+        icons.removeAll()
+        permissionPolicy.removeAll()
+
+        if Bundle.main.bundleIdentifier != nil {
+            UNUserNotificationCenter.current().removeAllDeliveredNotifications()
+        }
+
         initialized = false
+        installMainMenuPreservingApple(extraItems: [buildEditMenu()])
     }
 
     /// Ask Elixir to shut down (`event.system.quit`). Used by Quit menu / Cmd+Q.
@@ -166,6 +199,7 @@ final class HostController: NSObject {
     /// based on whether the exit looked intentional (`system.prepare_quit`)
     /// and whether we have a maximum-attempts budget left.
     private func beamDidExit() {
+        resetSession()
         beamProcess = nil
         restartTimer?.cancel()
         restartTimer = nil
@@ -289,6 +323,7 @@ final class HostController: NSObject {
     private func dispatch(_ method: String, params: JSONValue?) throws -> JSONValue {
         switch method {
         case "initialize":
+            resetSession()
             initialized = true
             return .object([
                 "protocol_version": .number(1),
@@ -537,6 +572,14 @@ final class HostController: NSObject {
                 ])
             }
             return .ok(id: id, result: .array(list))
+        case "test.tray.list":
+            let list: [JSONValue] = trays.keys.sorted().map { id in
+                .object(["tray_id": .string(id)])
+            }
+            return .ok(id: id, result: .array(list))
+        case "test.session.reset":
+            resetSession()
+            return .ok(id: id, result: .bool(true))
         case "test.menu.list":
             // Snapshot the current main menu (NSApp.mainMenu) so the E2E suite
             // can assert that the host has installed a default Edit menu with
