@@ -31,6 +31,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if host.readyToTerminate {
             return .terminateNow
         }
+        if host.suppressTerminate {
+            return .terminateCancel
+        }
         host.requestQuit()
         return .terminateLater
     }

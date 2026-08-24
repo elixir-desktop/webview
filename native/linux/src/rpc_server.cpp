@@ -95,6 +95,7 @@ bool RpcServer::start(const std::string& host, uint16_t port) {
 }
 
 void RpcServer::accept(GSocketConnection* conn) {
+  bool replacing = connection_ != nullptr;
   if (connection_) {
     close_connection();
   }
@@ -105,6 +106,7 @@ void RpcServer::accept(GSocketConnection* conn) {
 
   GInputStream* in = g_io_stream_get_input_stream(G_IO_STREAM(connection_));
   on_readable(in);
+  if (replacing && on_session_end_) on_session_end_();
 }
 
 void RpcServer::on_readable(GInputStream* stream) {

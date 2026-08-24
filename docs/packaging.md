@@ -134,12 +134,14 @@ DesktopWebView --edw-port=0 -- --foo bar
 ## Lifetime
 
 - **`reconnect` (default for packaged host-first):** host keeps listening after
-  BEAM/client disconnect. Elixir may reconnect and call `initialize` again.
-  Window state may be reset depending on host implementation; E2E asserts
-  documented behavior.
+  BEAM/client disconnect. Session UI (trays, windows, menus, icons,
+  notifications, permission policy) MUST be destroyed so the next BEAM starts
+  clean. Elixir may reconnect and call `initialize` again.
 - **`coupled`:** client disconnect → host exits; host exit → BEAM child is terminated.
+  Reset session UI before exit.
 - **`--edw-no-beam` (dev):** host exits when the Elixir client disconnects, even
-  if lifetime is `reconnect` — the VM owns the host process.
+  if lifetime is `reconnect` — the VM owns the host process. Reset session UI
+  first.
 
 ## Binaries
 

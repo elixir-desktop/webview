@@ -92,7 +92,8 @@ defmodule DesktopWebview.Menu.Adapter do
     if is_binary(adapter.taskbar_icon) do
       case result do
         {:menu, id} when is_binary(id) ->
-          _ = Transport.call("tray.set_menu", %{"tray_id" => adapter.taskbar_icon, "menu_id" => id})
+          _ =
+            Transport.call("tray.set_menu", %{"tray_id" => adapter.taskbar_icon, "menu_id" => id})
 
         _ ->
           :ok

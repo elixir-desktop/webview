@@ -23,6 +23,7 @@ Do **not** copy macOS UI code into other platforms — share only the protocol.
 | Flags | Parse/strip `--edw-*`; forward the rest to BEAM |
 | Env for BEAM | Set `EDW_PORT`, `EDW_HOST` when spawning |
 | Lifetime | Default `reconnect`; support `coupled` |
+| Session reset | On client disconnect, host-owned BEAM exit, TCP replace, and `initialize`: destroy trays, windows, webviews, menus, icons, notifications, permission policy. Do not quit the host on TCP replace. |
 | Tests | No native unit-test suite as source of truth — pass Elixir E2E |
 | Status | Mark `docs/status/<platform>.md` rows `done` only when E2E covers them |
 
@@ -34,7 +35,10 @@ Do **not** copy macOS UI code into other platforms — share only the protocol.
 4. **One window + webview** — `window.open`, `webview.load_url` / `reload` / `current_url`
 5. **Close veto** — native close → `event.window.close_requested`; do not destroy until Elixir says so
 6. **Multi-window** — resource ids on one TCP connection
-7. **Menus / tray / icons / notifications**
+7. **Menus / tray / icons / notifications** — including a default `Edit`
+   submenu (Undo, Redo, Cut, Copy, Paste, Delete, Select All) with the standard
+   `Cmd+X/C/V/A` accelerators. Without it, web engines do not receive copy/paste
+   keyboard events.
 8. **Permissions + mic/camera** (hybrid policy)
 9. **OS events** — reopen / open URL / open file where the OS supports them
 10. **Packaged BEAM spawn** + **CI artifact** on tag draft releases
@@ -89,6 +93,7 @@ Before flipping a status row to `done`, the corresponding E2E (or an added E2E) 
 | Window + navigation | `window open load reload and list` |
 | Multi-window | `multi-window` |
 | Menu / tray / icon / notification | `menu create and notification` |
+| Session reset | `session reset wipes tray and windows` |
 | Permissions + JS eval | `permission policy and simulate` |
 | Locale / OS string | `system locale and os_description` |
 

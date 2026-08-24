@@ -87,15 +87,25 @@ section disagree, **fix the host** and keep this section as the contract.
 
 - After TCP accept, the first production call MUST be `initialize`. Other methods
   → `-32001`.
+- When the RPC client goes away, or a host-owned BEAM process exits, the host
+  MUST destroy all **session** resources before a new client runs: trays,
+  windows, webviews, menus, icons, notifications, and permission policy.
+  After that reset, `initialize` plus `tray.create` / `window.open` matches a
+  first start (empty maps; no leftover status items or windows). Resource id
+  counters MAY keep increasing.
 - On **reconnect** lifetime, when the client disconnects the host **keeps
-  listening**. Native windows may remain visible. When a new client connects it
-  MUST call `initialize` again. The host MAY reset RPC session state (pending
-  request ids); it SHOULD keep existing window/webview resources addressable by
-  the same ids until the client destroys them (macOS currently keeps them).
-  **Exception:** `--edw-no-beam` (BEAM-first/dev) still exits the host on
-  disconnect — there is no host-owned BEAM to reconnect to.
+  listening**. It MUST still run the session reset above (do not keep native
+  windows or trays for the next BEAM). When a new client connects it MUST call
+  `initialize` again. `initialize` MUST run the same session reset if any
+  leftover resources remain (covers a new TCP client that replaces the old
+  socket before `onDisconnect` runs).
+- A TCP **replace** (new client while the previous connection is cancelled)
+  MUST reset session state only. It MUST NOT quit the host.
+- **Exception:** `--edw-no-beam` (BEAM-first/dev) still exits the host on a
+  true disconnect with no new client — there is no host-owned BEAM to reconnect
+  to. Reset session resources first so trays go away if host terminate is slow.
 - On **coupled** lifetime, client disconnect terminates the host; host exit
-  terminates the BEAM child if the host spawned it.
+  terminates the BEAM child if the host spawned it. Reset session first.
 
 ### Window close policy
 
@@ -121,6 +131,13 @@ section disagree, **fix the host** and keep this section as the contract.
 
 ### Menus and tray
 
+- The macOS host installs a default `Edit` submenu on the main menu (Undo, Redo,
+  Cut, Copy, Paste, Delete, Select All) with the standard `Cmd+Z`, `Cmd+Shift+Z`,
+  `Cmd+X`, `Cmd+C`, `Cmd+V`, `Cmd+A` accelerators. Actions are routed through the
+  responder chain, so the first responder (typically the WKWebView's text-input
+  view) handles them. Other platform hosts SHOULD install an equivalent default
+  Edit menu so keyboard accelerators work in their web engines too
+  ([porting.md](porting.md)).
 - `menu.create` / `menu.update` take a full DOM snapshot (not incremental diffs).
   After `menu.update`, hosts MUST re-bind any tray that references that `menu_id`
   (Desktop.Menu mounts empty then updates on mount).
@@ -158,7 +175,9 @@ Platform packaging notes (usage strings, manifests) live in [packaging.md](packa
 ### Single client
 
 Hosts MAY accept only one concurrent TCP client (macOS does). A new connection
-MAY replace the previous one; document if you support multiple clients.
+MAY replace the previous one; document if you support multiple clients. Replace
+MUST reset session UI (see `initialize` and reconnect) and MUST NOT treat the
+replaced socket as a host-quit signal.
 
 ## Production methods
 
@@ -312,6 +331,9 @@ Release binaries used by apps must leave this off. If called while disabled → 
 | `test.echo` | any | same params |
 | `test.capabilities` | — | capability map |
 | `test.window.list` | — | `[{window_id, webview_id, title, url}]` |
+| `test.tray.list` | — | `[{tray_id}]` |
+| `test.session.reset` | — | `true` — runs the same session wipe as BEAM stop (test RPC only) |
+| `test.menu.list` | — | `[{title, items:[{label, key, modifiers, action}]}]` snapshot of the host's main menu. macOS-only; other hosts return `-32601` until they implement the equivalent. |
 | `test.webview.eval` | `webview_id`, `script` | eval result (JSON-compatible) |
 | `test.permission.simulate` | `origin`, `type` | triggers `permission.request` |
 | `test.disconnect` | — | host closes the TCP connection |
