@@ -44,6 +44,7 @@ WebWindow::WebWindow(const std::string& window_id, const std::string& webview_id
 }
 
 WebWindow::~WebWindow() {
+  fail_pending_evals("webview destroyed");
   if (webview_) {
     if (nav_completed_token_.value)
       webview_->remove_NavigationCompleted(nav_completed_token_);
@@ -121,6 +122,7 @@ void WebWindow::create_webview() {
                       "edw: WebView2 environment failed (0x%08lx). Is the Evergreen Runtime "
                       "installed?\n",
                       static_cast<unsigned long>(result));
+              fail_pending_evals("webview2 runtime missing");
               return result;
             }
             env_ = env;
@@ -131,6 +133,7 @@ void WebWindow::create_webview() {
                       if (FAILED(result) || !controller) {
                         fprintf(stderr, "edw: WebView2 controller failed (0x%08lx)\n",
                                 static_cast<unsigned long>(result));
+                        fail_pending_evals("webview2 controller failed");
                         return result;
                       }
                       controller_ = controller;
@@ -139,6 +142,7 @@ void WebWindow::create_webview() {
                       resize_webview();
                       attach_handlers();
                       navigate_if_ready();
+                      if (!last_url_) flush_pending_evals();
                       return S_OK;
                     })
                     .Get());
@@ -150,6 +154,7 @@ void WebWindow::create_webview() {
             "edw: CreateCoreWebView2EnvironmentWithOptions failed (0x%08lx). Is the Evergreen "
             "Runtime installed?\n",
             static_cast<unsigned long>(hr));
+    fail_pending_evals("webview2 runtime missing");
   }
 }
 
@@ -173,6 +178,7 @@ void WebWindow::attach_handlers() {
               if (on_nav_)
                 on_nav_(webview_id_, "", true, "navigation failed: " + std::to_string(status));
             }
+            flush_pending_evals();
             return S_OK;
           })
           .Get(),
@@ -338,11 +344,7 @@ void WebWindow::set_menubar(HMENU menu) {
   if (hwnd_) SetMenu(hwnd_, menu);
 }
 
-void WebWindow::eval_js(const std::string& script, std::function<void(jsonutil::Json)> cb) {
-  if (!webview_ready_ || !webview_) {
-    cb(jsonutil::Json{{"error", "webview not ready"}});
-    return;
-  }
+void WebWindow::run_eval(const std::string& script, std::function<void(jsonutil::Json)> cb) {
   auto cb_ptr = std::make_shared<std::function<void(jsonutil::Json)>>(std::move(cb));
   webview_->ExecuteScript(
       utf8_to_wide(script).c_str(),
@@ -362,4 +364,25 @@ void WebWindow::eval_js(const std::string& script, std::function<void(jsonutil::
             return S_OK;
           })
           .Get());
+}
+
+void WebWindow::flush_pending_evals() {
+  if (!webview_ready_ || !webview_ || pending_evals_.empty()) return;
+  auto queued = std::move(pending_evals_);
+  pending_evals_.clear();
+  for (auto& [script, cb] : queued) run_eval(script, std::move(cb));
+}
+
+void WebWindow::fail_pending_evals(const std::string& message) {
+  auto queued = std::move(pending_evals_);
+  pending_evals_.clear();
+  for (auto& [_, cb] : queued) cb(jsonutil::Json{{"error", message}});
+}
+
+void WebWindow::eval_js(const std::string& script, std::function<void(jsonutil::Json)> cb) {
+  if (!webview_ready_ || !webview_) {
+    pending_evals_.emplace_back(script, std::move(cb));
+    return;
+  }
+  run_eval(script, std::move(cb));
 }

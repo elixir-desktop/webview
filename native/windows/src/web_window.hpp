@@ -10,6 +10,7 @@
 #include <functional>
 #include <optional>
 #include <string>
+#include <vector>
 
 class WebWindow {
  public:
@@ -63,6 +64,9 @@ class WebWindow {
   void attach_handlers();
   void resize_webview();
   void navigate_if_ready();
+  void run_eval(const std::string& script, std::function<void(jsonutil::Json)> cb);
+  void flush_pending_evals();
+  void fail_pending_evals(const std::string& message);
   std::string origin_from_url(const std::string& url) const;
 
   std::string window_id_;
@@ -74,6 +78,7 @@ class WebWindow {
   bool context_menu_enabled_ = false;
   std::optional<std::string> last_url_;
   bool webview_ready_ = false;
+  std::vector<std::pair<std::string, std::function<void(jsonutil::Json)>>> pending_evals_;
 
   Microsoft::WRL::ComPtr<ICoreWebView2Environment> env_;
   Microsoft::WRL::ComPtr<ICoreWebView2Controller> controller_;
