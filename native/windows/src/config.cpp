@@ -150,6 +150,15 @@ void HostConfig::apply_ini() {
     while (args >> tok) beam_args.push_back(tok);
   }
   if (auto v = ini.get("beam", "working_dir")) beam_working_dir = *v;
+  if (auto v = ini.get("lifetime", "restart_beam")) {
+    restart_beam = !(*v == "false" || *v == "0");
+  }
+  if (auto v = ini.get("lifetime", "restart_max_attempts")) {
+    restart_max_attempts = std::stoi(*v);
+  }
+  if (auto v = ini.get("lifetime", "restart_backoff_ms")) {
+    restart_backoff_ms = static_cast<uint32_t>(std::stoul(*v));
+  }
   for (auto& [k, v] : ini.section("env")) {
     extra_env[k] = v;
   }
