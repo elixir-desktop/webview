@@ -5,6 +5,7 @@
 #include "rpc_server.hpp"
 #include "web_window.hpp"
 
+#include <atomic>
 #include <map>
 #include <memory>
 #include <string>
@@ -43,11 +44,18 @@ class HostController {
   static constexpr UINT WM_EDW_REQUEST = WM_APP + 10;
   static constexpr UINT WM_EDW_DISCONNECT = WM_APP + 11;
   static constexpr UINT WM_EDW_TRAY = WM_APP + 12;
+  static constexpr UINT WM_EDW_BEAM_EXIT = WM_APP + 13;
+  static constexpr UINT WM_EDW_RESPAWN = WM_APP + 14;
 
  private:
   void client_disconnected();
   void reset_session();
   void spawn_beam();
+  void beam_did_exit();
+  bool should_respawn_beam();
+  void schedule_beam_respawn();
+  void watch_beam_process();
+  void clear_beam_watch();
   std::string next_id(const std::string& prefix);
 
   void handle_request(jsonutil::Json id, const std::string& method, jsonutil::Json params,
@@ -74,6 +82,9 @@ class HostController {
   void update_tray_icon(TrayEntry& tray);
   void destroy_menu_entry(MenuEntry& entry);
 
+  jsonutil::Json dialog_choose(const jsonutil::Json& params, bool directories);
+  jsonutil::Json dialog_prompt(const jsonutil::Json& params);
+
   void open_external(const std::string& url);
   void handle_permission(const std::string& origin, const std::string& type,
                          const std::string& webview_id,
@@ -86,8 +97,12 @@ class HostController {
   RpcServer server_;
   HWND hwnd_ = nullptr;
   bool initialized_ = false;
+  bool quit_initiated_ = false;
+  bool expected_beam_exit_ = false;
   int id_counter_ = 0;
+  int beam_restart_attempts_ = 0;
   UINT next_menu_cmd_ = 1000;
+  UINT_PTR respawn_timer_id_ = 0;
   std::map<std::string, std::unique_ptr<WebWindow>> windows_;
   std::map<std::string, std::string> webviews_;
   std::map<std::string, MenuEntry> menus_;
@@ -95,4 +110,5 @@ class HostController {
   std::map<std::string, IconEntry> icons_;
   std::map<std::string, std::map<std::string, std::string>> permission_policy_;
   HANDLE beam_process_ = nullptr;
+  HANDLE beam_wait_ = nullptr;
 };

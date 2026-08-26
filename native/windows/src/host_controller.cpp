@@ -1,10 +1,15 @@
 #include "host_controller.hpp"
 #include "win_util.hpp"
 
+#include <algorithm>
+#include <cstdint>
+#include <cctype>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <initializer_list>
 #include <sstream>
+#include <vector>
 
 namespace {
 
@@ -23,6 +28,12 @@ struct RequestMsg {
 HostController::HostController(HostConfig config) : config_(std::move(config)) {}
 
 HostController::~HostController() {
+  quit_initiated_ = true;
+  if (respawn_timer_id_) {
+    KillTimer(hwnd_, respawn_timer_id_);
+    respawn_timer_id_ = 0;
+  }
+  clear_beam_watch();
   if (beam_process_) {
     TerminateProcess(beam_process_, 0);
     CloseHandle(beam_process_);
@@ -103,6 +114,25 @@ LRESULT HostController::on_host_message(HWND hwnd, UINT msg, WPARAM wParam, LPAR
     client_disconnected();
     return 0;
   }
+  if (msg == WM_EDW_BEAM_EXIT) {
+    beam_did_exit();
+    return 0;
+  }
+  if (msg == WM_EDW_RESPAWN) {
+    respawn_timer_id_ = 0;
+    if (config_.beam_enabled && !config_.no_beam) {
+      spawn_beam();
+    }
+    return 0;
+  }
+  if (msg == WM_TIMER && wParam == 1) {
+    KillTimer(hwnd, 1);
+    respawn_timer_id_ = 0;
+    if (config_.beam_enabled && !config_.no_beam) {
+      spawn_beam();
+    }
+    return 0;
+  }
   if (msg == WM_EDW_TRAY) {
     if (lParam == WM_LBUTTONUP || lParam == WM_RBUTTONUP) {
       // Find tray by uID
@@ -147,12 +177,86 @@ bool HostController::on_menu_command(UINT cmd) {
 void HostController::client_disconnected() {
   reset_session();
   if (config_.lifetime == Lifetime::Coupled || config_.no_beam) {
+    quit_initiated_ = true;
+    clear_beam_watch();
     if (beam_process_) {
       TerminateProcess(beam_process_, 0);
       CloseHandle(beam_process_);
       beam_process_ = nullptr;
     }
     ExitProcess(0);
+  }
+}
+
+void HostController::clear_beam_watch() {
+  if (beam_wait_) {
+    UnregisterWaitEx(beam_wait_, INVALID_HANDLE_VALUE);
+    beam_wait_ = nullptr;
+  }
+}
+
+void HostController::watch_beam_process() {
+  clear_beam_watch();
+  if (!beam_process_ || !hwnd_) return;
+  // RegisterWaitForSingleObject callback runs on a thread pool thread; bounce
+  // back to the UI thread via PostMessage so we can respawn safely.
+  HANDLE wait = nullptr;
+  if (!RegisterWaitForSingleObject(
+          &wait, beam_process_,
+          [](PVOID ctx, BOOLEAN /*timed_out*/) {
+            auto* self = static_cast<HostController*>(ctx);
+            if (self && self->hwnd_) {
+              PostMessageW(self->hwnd_, WM_EDW_BEAM_EXIT, 0, 0);
+            }
+          },
+          this, INFINITE, WT_EXECUTEONLYONCE)) {
+    fprintf(stderr, "edw: RegisterWaitForSingleObject failed (%lu)\n", GetLastError());
+    return;
+  }
+  beam_wait_ = wait;
+}
+
+void HostController::beam_did_exit() {
+  clear_beam_watch();
+  if (beam_process_) {
+    CloseHandle(beam_process_);
+    beam_process_ = nullptr;
+  }
+  reset_session();
+  if (respawn_timer_id_) {
+    KillTimer(hwnd_, respawn_timer_id_);
+    respawn_timer_id_ = 0;
+  }
+  if (quit_initiated_) return;
+  if (expected_beam_exit_) {
+    expected_beam_exit_ = false;
+    return;
+  }
+  if (should_respawn_beam()) {
+    schedule_beam_respawn();
+  }
+}
+
+bool HostController::should_respawn_beam() {
+  if (!config_.restart_beam) return false;
+  if (config_.restart_max_attempts > 0 &&
+      beam_restart_attempts_ >= config_.restart_max_attempts) {
+    fprintf(stderr, "edw: beam exited; restart limit reached, terminating host\n");
+    PostQuitMessage(1);
+    return false;
+  }
+  return true;
+}
+
+void HostController::schedule_beam_respawn() {
+  beam_restart_attempts_ += 1;
+  int shift = (std::min)(beam_restart_attempts_ - 1, 4);
+  uint32_t multiplier = static_cast<uint32_t>(1) << shift;
+  uint32_t backoff = (std::min)(config_.restart_backoff_ms * multiplier, 5000u);
+  respawn_timer_id_ = SetTimer(hwnd_, 1, backoff, nullptr);
+  if (!respawn_timer_id_) {
+    fprintf(stderr, "edw: SetTimer failed; respawning immediately\n");
+    spawn_beam();
   }
 }
 
@@ -190,13 +294,22 @@ void HostController::spawn_beam() {
     WIN32_FIND_DATAA fd{};
     HANDLE h = FindFirstFileA((bin + "\\*").c_str(), &fd);
     if (h != INVALID_HANDLE_VALUE) {
+      std::string first_any;
+      std::string first_bat;
       do {
         if (fd.cFileName[0] == '.') continue;
         if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
-        app_name = fd.cFileName;
-        break;
+        std::string name = fd.cFileName;
+        if (first_any.empty()) first_any = name;
+        auto lower = name;
+        for (auto& c : lower) c = static_cast<char>(tolower(static_cast<unsigned char>(c)));
+        if (first_bat.empty() && lower.size() >= 4 &&
+            (lower.substr(lower.size() - 4) == ".bat" || lower.substr(lower.size() - 4) == ".cmd")) {
+          first_bat = name;
+        }
       } while (FindNextFileA(h, &fd));
       FindClose(h);
+      app_name = !first_bat.empty() ? first_bat : first_any;
     }
   }
   if (app_name.empty()) {
@@ -204,14 +317,30 @@ void HostController::spawn_beam() {
     return;
   }
   std::string script = join_path(join_path(beam_dir, "bin"), app_name);
+  if (!file_exists(script)) {
+    if (file_exists(script + ".bat"))
+      script += ".bat";
+    else if (file_exists(script + ".cmd"))
+      script += ".cmd";
+  }
   std::string wd =
       config_.beam_working_dir
           ? (is_absolute_path(*config_.beam_working_dir) ? *config_.beam_working_dir
                                                     : join_path(root, *config_.beam_working_dir))
           : beam_dir;
 
+  auto lower_script = script;
+  for (auto& c : lower_script) c = static_cast<char>(tolower(static_cast<unsigned char>(c)));
+  bool is_batch = lower_script.size() >= 4 && (lower_script.substr(lower_script.size() - 4) == ".bat" ||
+                                               lower_script.substr(lower_script.size() - 4) == ".cmd");
+
   std::ostringstream cmd;
-  cmd << '"' << script << '"';
+  if (is_batch) {
+    // CreateProcess cannot launch .bat directly; go through cmd.exe.
+    cmd << "cmd.exe /c \"" << script << "\"";
+  } else {
+    cmd << '"' << script << '"';
+  }
   for (auto& a : config_.beam_args) cmd << ' ' << a;
   for (auto& a : config_.forwarded_argv) cmd << ' ' << a;
   std::string cmdline = cmd.str();
@@ -246,13 +375,21 @@ void HostController::spawn_beam() {
   std::vector<wchar_t> mutable_cmd(wcmd.begin(), wcmd.end());
   mutable_cmd.push_back(L'\0');
 
+  clear_beam_watch();
+  if (beam_process_) {
+    CloseHandle(beam_process_);
+    beam_process_ = nullptr;
+  }
+
   if (!CreateProcessW(nullptr, mutable_cmd.data(), nullptr, nullptr, FALSE, CREATE_UNICODE_ENVIRONMENT,
                       env_block.data(), wwd.c_str(), &si, &pi)) {
-    fprintf(stderr, "edw: failed to spawn beam\n");
+    fprintf(stderr, "edw: failed to spawn beam (%lu): %s\n", GetLastError(), cmdline.c_str());
     return;
   }
   CloseHandle(pi.hThread);
   beam_process_ = pi.hProcess;
+  beam_restart_attempts_ = 0;
+  watch_beam_process();
 }
 
 void HostController::handle_request(jsonutil::Json id, const std::string& method,
@@ -767,12 +904,178 @@ jsonutil::Json HostController::dispatch(const std::string& method, const jsonuti
     return true;
   }
 
-  if (method == "dialog.choose_file" || method == "dialog.choose_directory" ||
-      method == "dialog.prompt") {
-    throw HostError{-32004, "dialog RPCs not implemented on Windows yet"};
+  if (method == "system.prepare_quit") {
+    // Elixir is about to exit intentionally (Updater restart or clean quit).
+    // Treat the forthcoming BEAM exit as expected so we do not respawn.
+    expected_beam_exit_ = true;
+    quit_initiated_ = true;
+    return true;
   }
 
+  if (method == "dialog.choose_file") return dialog_choose(p, false);
+  if (method == "dialog.choose_directory") return dialog_choose(p, true);
+  if (method == "dialog.prompt") return dialog_prompt(p);
+
   throw HostError{-32601, "Method not found: " + method};
+}
+
+jsonutil::Json HostController::dialog_choose(const jsonutil::Json& params, bool directories) {
+  IFileOpenDialog* dialog = nullptr;
+  HRESULT hr = CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER,
+                                IID_PPV_ARGS(&dialog));
+  if (FAILED(hr) || !dialog) throw HostError{-32603, "FileOpenDialog unavailable"};
+
+  DWORD options = 0;
+  dialog->GetOptions(&options);
+  options |= FOS_FORCEFILESYSTEM | FOS_PATHMUSTEXIST;
+  if (directories) options |= FOS_PICKFOLDERS;
+  dialog->SetOptions(options);
+
+  if (auto title = jsonutil::get_string(params, "title")) {
+    dialog->SetTitle(utf8_to_wide(*title).c_str());
+  }
+  if (auto path = jsonutil::get_string(params, "default_path"); path && !path->empty()) {
+    IShellItem* folder = nullptr;
+    if (SUCCEEDED(SHCreateItemFromParsingName(utf8_to_wide(*path).c_str(), nullptr,
+                                              IID_PPV_ARGS(&folder))) &&
+        folder) {
+      dialog->SetFolder(folder);
+      folder->Release();
+    }
+  }
+
+  hr = dialog->Show(hwnd_);
+  if (hr == HRESULT_FROM_WIN32(ERROR_CANCELLED)) {
+    dialog->Release();
+    return nullptr;
+  }
+  if (FAILED(hr)) {
+    dialog->Release();
+    throw HostError{-32603, "dialog failed"};
+  }
+
+  IShellItem* item = nullptr;
+  hr = dialog->GetResult(&item);
+  dialog->Release();
+  if (FAILED(hr) || !item) return nullptr;
+
+  PWSTR file_path = nullptr;
+  hr = item->GetDisplayName(SIGDN_FILESYSPATH, &file_path);
+  item->Release();
+  if (FAILED(hr) || !file_path) return nullptr;
+
+  std::string path = wide_to_utf8(file_path);
+  CoTaskMemFree(file_path);
+  return jsonutil::Json{{"path", path}};
+}
+
+namespace {
+
+struct PromptState {
+  std::wstring title;
+  std::wstring message;
+  std::wstring value;
+  bool accepted = false;
+};
+
+INT_PTR CALLBACK PromptDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+  auto* state = reinterpret_cast<PromptState*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
+  switch (msg) {
+    case WM_INITDIALOG: {
+      state = reinterpret_cast<PromptState*>(lParam);
+      SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(state));
+      SetWindowTextW(hwnd, state->title.c_str());
+      SetDlgItemTextW(hwnd, 1001, state->message.c_str());
+      SetDlgItemTextW(hwnd, 1002, state->value.c_str());
+      return TRUE;
+    }
+    case WM_COMMAND:
+      if (LOWORD(wParam) == IDOK) {
+        wchar_t buf[1024];
+        GetDlgItemTextW(hwnd, 1002, buf, 1024);
+        if (state) {
+          state->value = buf;
+          state->accepted = true;
+        }
+        EndDialog(hwnd, IDOK);
+        return TRUE;
+      }
+      if (LOWORD(wParam) == IDCANCEL) {
+        EndDialog(hwnd, IDCANCEL);
+        return TRUE;
+      }
+      break;
+  }
+  return FALSE;
+}
+
+}  // namespace
+
+jsonutil::Json HostController::dialog_prompt(const jsonutil::Json& params) {
+  PromptState state;
+  state.title = utf8_to_wide(jsonutil::get_string(params, "title").value_or(""));
+  state.message = utf8_to_wide(jsonutil::get_string(params, "message").value_or(""));
+  state.value = utf8_to_wide(jsonutil::get_string(params, "default_value").value_or(""));
+
+  // In-memory dialog template: label, edit, OK, Cancel.
+  std::vector<uint8_t> bytes;
+  bytes.reserve(1024);
+  auto align4 = [&]() {
+    while (bytes.size() % 4) bytes.push_back(0);
+  };
+  auto append_words = [&](std::initializer_list<WORD> words) {
+    for (WORD w : words) {
+      bytes.push_back(static_cast<uint8_t>(w & 0xff));
+      bytes.push_back(static_cast<uint8_t>((w >> 8) & 0xff));
+    }
+  };
+  auto append_wstring = [&](const wchar_t* s) {
+    while (*s) {
+      append_words({static_cast<WORD>(*s)});
+      ++s;
+    }
+    append_words({0});
+  };
+
+  DLGTEMPLATE header{};
+  header.style = DS_MODALFRAME | DS_CENTER | WS_POPUP | WS_CAPTION | WS_SYSMENU;
+  header.cdit = 4;
+  header.cx = 220;
+  header.cy = 90;
+  const auto header_off = bytes.size();
+  bytes.resize(header_off + sizeof(DLGTEMPLATE));
+  memcpy(bytes.data() + header_off, &header, sizeof(header));
+  append_words({0, 0});  // menu, class
+  append_wstring(L"");   // title
+
+  auto add_control = [&](DWORD style, short x, short y, short cx, short cy, WORD id, WORD class_atom,
+                         const wchar_t* text) {
+    align4();
+    DLGITEMTEMPLATE item{};
+    item.style = style | WS_CHILD | WS_VISIBLE;
+    item.x = x;
+    item.y = y;
+    item.cx = cx;
+    item.cy = cy;
+    item.id = id;
+    const auto off = bytes.size();
+    bytes.resize(off + sizeof(DLGITEMTEMPLATE));
+    memcpy(bytes.data() + off, &item, sizeof(item));
+    append_words({0xFFFF, class_atom});
+    append_wstring(text);
+    append_words({0});  // creation data
+  };
+
+  add_control(SS_LEFT, 8, 8, 200, 24, 1001, 0x0082, L"");
+  add_control(ES_LEFT | ES_AUTOHSCROLL | WS_BORDER | WS_TABSTOP, 8, 36, 200, 14, 1002, 0x0081, L"");
+  add_control(BS_DEFPUSHBUTTON | WS_TABSTOP, 100, 60, 50, 14, IDOK, 0x0080, L"OK");
+  add_control(BS_PUSHBUTTON | WS_TABSTOP, 156, 60, 50, 14, IDCANCEL, 0x0080, L"Cancel");
+
+  INT_PTR result = DialogBoxIndirectParamW(
+      GetModuleHandleW(nullptr), reinterpret_cast<DLGTEMPLATE*>(bytes.data()), hwnd_, PromptDlgProc,
+      reinterpret_cast<LPARAM>(&state));
+  if (result != IDOK || !state.accepted) return nullptr;
+  return jsonutil::Json{{"value", wide_to_utf8(state.value.c_str())}};
 }
 
 jsonutil::Json HostController::handle_test(const std::string& method, const jsonutil::Json& params,

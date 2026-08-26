@@ -9,63 +9,40 @@ $BuildDir = Join-Path $Root "native\windows\build"
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 New-Item -ItemType Directory -Force -Path $BuildDir | Out-Null
 
-function Enter-VsDevShell {
-  $vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
-  if (-not (Test-Path $vswhere)) { throw "vswhere.exe not found" }
-  $vsPath = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
-  if (-not $vsPath) { throw "Visual Studio with MSVC not found" }
-  $vcvars = Join-Path $vsPath "VC\Auxiliary\Build\vcvars64.bat"
-  if (-not (Test-Path $vcvars)) { throw "vcvars64.bat not found at $vcvars" }
+$vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
+if (-not (Test-Path $vswhere)) { throw "vswhere.exe not found" }
+$vsPath = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+if (-not $vsPath) { throw "Visual Studio with MSVC not found" }
+$vcvars = Join-Path $vsPath "VC\Auxiliary\Build\vcvars64.bat"
+if (-not (Test-Path $vcvars)) { throw "vcvars64.bat not found at $vcvars" }
 
-  $temp = [System.IO.Path]::GetTempFileName() + ".cmd"
-  @"
+$cmdExe = Join-Path $env:SystemRoot "System32\cmd.exe"
+$bat = Join-Path $env:TEMP ("edw-build-" + [guid]::NewGuid().ToString("n") + ".cmd")
+@"
 @echo off
-call "$vcvars" >nul
-set > "$temp.env"
-"@ | Set-Content -Path $temp -Encoding ASCII
-  cmd /c $temp
-  Get-Content "$temp.env" | ForEach-Object {
-    if ($_ -match '^(.*?)=(.*)$') {
-      Set-Item -Path "env:$($matches[1])" -Value $matches[2]
-    }
-  }
-  Remove-Item $temp -ErrorAction SilentlyContinue
-  Remove-Item "$temp.env" -ErrorAction SilentlyContinue
-}
+call "$vcvars" || exit /b 1
+cd /d "$Root"
+cmake -S native\windows -B native\windows\build -G Ninja -DCMAKE_BUILD_TYPE=Release
+if errorlevel 1 (
+  rmdir /s /q native\windows\build 2>nul
+  mkdir native\windows\build
+  cmake -S native\windows -B native\windows\build -DCMAKE_BUILD_TYPE=Release || exit /b 1
+)
+cmake --build native\windows\build --config Release --parallel || exit /b 1
+if exist native\windows\build\DesktopWebView.exe (
+  copy /y native\windows\build\DesktopWebView.exe priv\native\windows\DesktopWebView.exe >nul
+) else if exist native\windows\build\Release\DesktopWebView.exe (
+  copy /y native\windows\build\Release\DesktopWebView.exe priv\native\windows\DesktopWebView.exe >nul
+) else (
+  echo DesktopWebView.exe not found
+  exit /b 1
+)
+echo Built priv\native\windows\DesktopWebView.exe
+"@ | Set-Content -Path $bat -Encoding ASCII
 
-# Ensure x64 cl is available
-$cl = Get-Command cl -ErrorAction SilentlyContinue
-if (-not $cl -or ($cl.Source -notmatch 'Hostx64\\x64')) {
-  Write-Host "Entering VS x64 environment..."
-  Enter-VsDevShell
-}
-
-$cmake = Get-Command cmake -ErrorAction SilentlyContinue
-if (-not $cmake) { throw "cmake not found on PATH" }
-
-Push-Location $Root
 try {
-  & cmake -S (Join-Path $Root "native\windows") -B $BuildDir -G "Ninja" -DCMAKE_BUILD_TYPE=Release
-  if ($LASTEXITCODE -ne 0) {
-    Write-Host "Ninja configure failed; wiping build dir and retrying with default generator..."
-    Remove-Item -Recurse -Force $BuildDir -ErrorAction SilentlyContinue
-    New-Item -ItemType Directory -Force -Path $BuildDir | Out-Null
-    & cmake -S (Join-Path $Root "native\windows") -B $BuildDir -DCMAKE_BUILD_TYPE=Release
-    if ($LASTEXITCODE -ne 0) { throw "cmake configure failed" }
-  }
-  & cmake --build $BuildDir --config Release --parallel
-  if ($LASTEXITCODE -ne 0) { throw "cmake build failed" }
-
-  $exeCandidates = @(
-    (Join-Path $BuildDir "DesktopWebView.exe"),
-    (Join-Path $BuildDir "Release\DesktopWebView.exe"),
-    (Join-Path $BuildDir "RelWithDebInfo\DesktopWebView.exe")
-  )
-  $built = $exeCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
-  if (-not $built) { throw "DesktopWebView.exe not found under $BuildDir" }
-
-  Copy-Item -Force $built (Join-Path $OutDir "DesktopWebView.exe")
-  Write-Host "Built $(Join-Path $OutDir 'DesktopWebView.exe')"
+  & $cmdExe /c $bat
+  if ($LASTEXITCODE -ne 0) { throw "Windows host build failed with exit $LASTEXITCODE" }
 } finally {
-  Pop-Location
+  Remove-Item $bat -ErrorAction SilentlyContinue
 }

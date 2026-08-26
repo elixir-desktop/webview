@@ -20,7 +20,7 @@ config :desktop, :menu_adapter, DesktopWebview.Menu.Adapter
 |------|---------|
 | `lib/desktop_webview/` | Elixir transport, launcher, backend, menu adapter |
 | `native/macos/` | Swift + AppKit + WKWebView host (primary) |
-| `native/windows/` | WebView2 host (scaffold until implemented) |
+| `native/windows/` | WebView2 host |
 | `native/linux/` | WebKitGTK host (scaffold until implemented) |
 | `docs/` | Protocol, packaging, **porting**, integration, per-platform status |
 | `test/` | Unit + Elixir E2E (drives the native binary) |

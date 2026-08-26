@@ -11,7 +11,7 @@ spawns the BEAM release; in development an existing BEAM can launch the host wit
 | Platform | Engine | Status |
 |----------|--------|--------|
 | macOS | WKWebView | Primary — see [docs/status/macos.md](docs/status/macos.md) |
-| Windows | WebView2 | Planned — [docs/status/windows.md](docs/status/windows.md) |
+| Windows | WebView2 | Done — [docs/status/windows.md](docs/status/windows.md) |
 | Linux | WebKitGTK | Usable — [docs/status/linux.md](docs/status/linux.md) |
 
 ## Quick start (development)

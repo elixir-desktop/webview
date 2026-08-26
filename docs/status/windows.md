@@ -32,6 +32,8 @@ Release asset: `DesktopWebView-windows-x64.exe` (GitHub Releases; not Hex `priv/
 | Permission policy hybrid | done | E2E simulate + policy |
 | Microphone in webview | done | Permission RPC + WebView2 kinds |
 | Camera in webview | done | Permission RPC + WebView2 kinds |
+| Native dialogs | done | IFileOpenDialog + Win32 prompt |
+| Host-driven BEAM restart | done | `restart_beam` ini + process wait |
 | Test RPC channel | done | E2E |
 | Release artifact download | todo | Elixir fetch/cache still pending |
 | Ad-hoc / CI signing | todo | Authenticode via desktop_deployment later |
