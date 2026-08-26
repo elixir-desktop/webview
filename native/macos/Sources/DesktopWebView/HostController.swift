@@ -4,7 +4,7 @@ import Foundation
 import UserNotifications
 import WebKit
 
-final class HostController: NSObject {
+final class HostController: NSObject, UNUserNotificationCenterDelegate {
     let config: HostConfig
     let server = RPCServer()
     private var initialized = false
@@ -79,7 +79,12 @@ final class HostController: NSObject {
         // Probe OS mic TCC early so the usage string from embedded Info.plist can
         // surface a System Settings prompt before CallLive getUserMedia.
         AVCaptureDevice.requestAccess(for: .audio) { _ in }
-        // UNUserNotificationCenter requires a real app bundle; defer until notification.show.
+        // UNUserNotificationCenter only works from a real .app; set the delegate so
+        // banners still show while the app is focused (Test Notification, etc.).
+        if Bundle.main.bundleURL.pathExtension == "app" {
+            let center = UNUserNotificationCenter.current()
+            center.delegate = self
+        }
     }
 
     @objc private func appReopen() {
@@ -975,13 +980,57 @@ final class HostController: NSObject {
             content.body = message
             let req = UNNotificationRequest(identifier: id, content: content, trigger: nil)
             let center = UNUserNotificationCenter.current()
-            center.requestAuthorization(options: [.alert, .sound]) { _, _ in
-                center.add(req, withCompletionHandler: nil)
+            center.delegate = self
+            center.getNotificationSettings { settings in
+                switch settings.authorizationStatus {
+                case .authorized, .provisional, .ephemeral:
+                    center.add(req, withCompletionHandler: nil)
+                case .notDetermined:
+                    center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
+                        if granted {
+                            center.add(req, withCompletionHandler: nil)
+                        } else {
+                            fputs("notification: authorization denied for \(title)\n", stderr)
+                        }
+                    }
+                case .denied:
+                    fputs("notification: authorization denied for \(title)\n", stderr)
+                @unknown default:
+                    center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
+                        if granted {
+                            center.add(req, withCompletionHandler: nil)
+                        }
+                    }
+                }
             }
         } else {
             showCliNotification(title: title, message: message)
         }
         return .object(["notification_id": .string(id)])
+    }
+
+    // MARK: - UNUserNotificationCenterDelegate
+
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        // Without this, macOS suppresses banners while the app is in the foreground.
+        completionHandler([.banner, .list, .sound])
+    }
+
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping () -> Void
+    ) {
+        let id = response.notification.request.identifier
+        server.notify(
+            method: "event.notification.click",
+            params: .object(["notification_id": .string(id)])
+        )
+        completionHandler()
     }
 
     private func showCliNotification(title: String, message: String) {

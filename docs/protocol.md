@@ -156,6 +156,9 @@ section disagree, **fix the host** and keep this section as the contract.
   visible fallback when the OS allows it (e.g. AppleScript on macOS) and MAY
   also log; they must still return a `notification_id` (E2E must not require
   a visible banner).
+- When the app is in the foreground, hosts MUST still present a visible banner
+  when the OS allows it (e.g. macOS `UNUserNotificationCenterDelegate.willPresent`
+  with `.banner`). Do not rely on background-only delivery.
 
 ### Permissions (hybrid)
 
