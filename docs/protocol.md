@@ -140,7 +140,8 @@ section disagree, **fix the host** and keep this section as the contract.
   ([porting.md](porting.md)).
 - `menu.create` / `menu.update` take a full DOM snapshot (not incremental diffs).
   After `menu.update`, hosts MUST re-bind any tray that references that `menu_id`
-  (Desktop.Menu mounts empty then updates on mount).
+  and refresh any window menubar installed via `window.set_menubar` for that
+  `menu_id` (Desktop.Menu mounts empty then updates on mount).
 - Item activation → `event.menu.click` with the `onclick` attribute string from
   the DOM (may be empty).
 - Tray is a status/notification-area icon with an optional menu.

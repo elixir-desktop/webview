@@ -16,6 +16,8 @@ final class HostController: NSObject, UNUserNotificationCenterDelegate {
     private var trays: [String: NSStatusItem] = [:]
     /// menu_id → tray_id bindings so menu.update reattaches the status item menu.
     private var trayMenus: [String: String] = [:]
+    /// menu_id → window_id bindings so menu.update refreshes NSApp.mainMenu copies.
+    private var menubarMenus: [String: String] = [:]
     private var icons: [String: NSImage] = [:]
     private var permissionPolicy: [String: [String: String]] = [:] // origin -> type -> allow|deny|ask
     private var beamProcess: Process?
@@ -123,6 +125,7 @@ final class HostController: NSObject, UNUserNotificationCenterDelegate {
         }
         trays.removeAll()
         trayMenus.removeAll()
+        menubarMenus.removeAll()
 
         // Do not call NSWindow.close(): last-window close can still invoke
         // applicationShouldTerminate on some runners and drop the RPC socket.
@@ -384,25 +387,11 @@ final class HostController: NSObject, UNUserNotificationCenterDelegate {
             let w = try win(params)
             // No menu_id means "don't touch the main menu"; the Edit menu
             // installed at start() (or by set_menubar earlier) remains active.
-            guard let menuId = params?["menu_id"]?.stringValue, let menu = menus[menuId] else {
+            guard let menuId = params?["menu_id"]?.stringValue, menus[menuId] != nil else {
                 return .bool(true)
             }
-            // AppKit always titles the *first* main-menu item with the process
-            // name. Keep the application (Apple) menu first, then the default
-            // Edit menu (so Cmd+C/V/X/A accelerators remain active), then the
-            // user-supplied menubar items. Installing the Edit menu from a copy
-            // is safe — each window gets its own mainMenu instance.
-            let bar = NSMenu()
-            if let apple = ensureAppleMenuItem() {
-                apple.menu?.removeItem(apple)
-                bar.addItem(apple)
-            }
-            bar.addItem(buildEditMenu())
-            for item in menu.items {
-                bar.addItem(item.copy() as! NSMenuItem)
-            }
-            w.window.menu = bar
-            NSApp.mainMenu = bar
+            installMenubar(for: w, menuId: menuId)
+            menubarMenus[menuId] = w.windowId
             return .bool(true)
         case "window.iconize":
             let w = try win(params)
@@ -456,6 +445,7 @@ final class HostController: NSObject, UNUserNotificationCenterDelegate {
             if let id = params?["menu_id"]?.stringValue {
                 menus.removeValue(forKey: id)
                 menuOnclicks.removeValue(forKey: id)
+                menubarMenus.removeValue(forKey: id)
             }
             return .bool(true)
         case "menu.set_apple":
@@ -719,6 +709,7 @@ final class HostController: NSObject, UNUserNotificationCenterDelegate {
         w.window.close()
         webviews = webviews.filter { $0.value != w.windowId }
         windows.removeValue(forKey: w.windowId)
+        menubarMenus = menubarMenus.filter { $0.value != w.windowId }
         return .bool(true)
     }
 
@@ -753,7 +744,33 @@ final class HostController: NSObject, UNUserNotificationCenterDelegate {
         if let trayId = trayMenus[id], let item = trays[trayId] {
             item.menu = menu
         }
+        // window.set_menubar copies items once; refresh copies after rebuild so
+        // item tags stay aligned with menuOnclicks.
+        if let windowId = menubarMenus[id], let w = windows[windowId] {
+            installMenubar(for: w, menuId: id)
+        }
         return .bool(true)
+    }
+
+    /// Install a copy of `menus[menuId]` into NSApp.mainMenu for `w`.
+    private func installMenubar(for w: WebWindowController, menuId: String) {
+        guard let menu = menus[menuId] else { return }
+        // AppKit always titles the *first* main-menu item with the process
+        // name. Keep the application (Apple) menu first, then the default
+        // Edit menu (so Cmd+C/V/X/A accelerators remain active), then the
+        // user-supplied menubar items. Installing the Edit menu from a copy
+        // is safe — each window gets its own mainMenu instance.
+        let bar = NSMenu()
+        if let apple = ensureAppleMenuItem() {
+            apple.menu?.removeItem(apple)
+            bar.addItem(apple)
+        }
+        bar.addItem(buildEditMenu())
+        for item in menu.items {
+            bar.addItem(item.copy() as! NSMenuItem)
+        }
+        w.window.menu = bar
+        NSApp.mainMenu = bar
     }
 
     private func buildMenu(dom: JSONValue?, onclicks: inout [Int: String], menuId: String) -> NSMenu {
