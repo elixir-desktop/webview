@@ -125,6 +125,15 @@ defmodule DesktopWebview.Backend do
   @impl true
   def activate_event_active?(_event), do: true
 
+  @impl true
+  def prepare_shutdown do
+    if Process.whereis(Transport) do
+      _ = Transport.call("system.prepare_quit", %{})
+    end
+
+    :ok
+  end
+
   # —— Window ——
 
   @impl true
