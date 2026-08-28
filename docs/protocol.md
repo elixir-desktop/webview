@@ -342,5 +342,7 @@ Release binaries used by apps must leave this off. If called while disabled → 
 | `test.permission.simulate` | `origin`, `type` | triggers `permission.request` |
 | `test.disconnect` | — | host closes the TCP connection |
 | `test.crash` | — | host process exits non-zero (E2E only) |
+| `test.notification.emit_click` | `notification_id` | emits `event.notification.click` (same path as OS click) |
+| `test.notification.emit_dismiss` | `notification_id` | emits `event.notification.dismiss` |
 
 Production code paths must not call `test.*`.

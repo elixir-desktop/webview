@@ -23,6 +23,10 @@ final class WebWindowController: NSObject, NSWindowDelegate, WKUIDelegate, WKNav
             backing: .buffered,
             defer: false
         )
+        // Programmatic NSWindows default to isReleasedWhenClosed = true, which
+        // races AppKit's _NSWindowTransformAnimation on activate/raise and can
+        // SIGSEGV when a notification click brings the app forward.
+        window.isReleasedWhenClosed = false
         window.title = title
         window.center()
 

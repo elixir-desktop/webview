@@ -99,6 +99,27 @@ defmodule DesktopWebview.E2ETest do
     assert {:ok, true} = Transport.call("window.destroy", %{"window_id" => wid})
   end
 
+  test "window iconize raise hide show does not crash host" do
+    assert {:ok, %{"window_id" => wid}} =
+             Transport.call("window.open", %{
+               "title" => "RaiseMe",
+               "width" => 480,
+               "height" => 320
+             })
+
+    assert {:ok, true} =
+             Transport.call("window.iconize", %{"window_id" => wid, "iconize" => true})
+
+    Process.sleep(200)
+    assert {:ok, true} = Transport.call("window.raise", %{"window_id" => wid})
+    Process.sleep(200)
+    assert {:ok, true} = Transport.call("window.hide", %{"window_id" => wid})
+    assert {:ok, true} = Transport.call("window.show", %{"window_id" => wid, "show" => true})
+    assert {:ok, true} = Transport.call("window.raise", %{"window_id" => wid})
+    assert {:ok, "pong"} = Transport.call("test.ping", %{})
+    assert {:ok, true} = Transport.call("window.destroy", %{"window_id" => wid})
+  end
+
   test "menu create and notification" do
     dom = %{
       "tag" => "menubar",
@@ -124,9 +145,31 @@ defmodule DesktopWebview.E2ETest do
 
     assert {:ok, %{"notification_id" => nid}} =
              Transport.call("notification.show", %{
+               "id" => "e2e-note-1",
                "title" => "Hello",
                "message" => "World"
              })
+
+    assert nid == "e2e-note-1"
+
+    # Transport is restarted in setup; restart EventBridge so it resubscribes.
+    if pid = Process.whereis(DesktopWebview.EventBridge) do
+      Process.exit(pid, :kill)
+      Process.sleep(20)
+    end
+
+    DesktopWebview.EventBridge.ensure_started()
+    DesktopWebview.EventBridge.register_notification(nid, self())
+
+    assert {:ok, true} =
+             Transport.call("test.notification.emit_click", %{"notification_id" => nid})
+
+    assert_receive {:edw_notification, ^nid, :click}, 1000
+
+    assert {:ok, true} =
+             Transport.call("test.notification.emit_dismiss", %{"notification_id" => nid})
+
+    assert_receive {:edw_notification, ^nid, :dismiss}, 1000
 
     assert {:ok, true} = Transport.call("notification.close", %{"notification_id" => nid})
     assert {:ok, true} = Transport.call("tray.destroy", %{"tray_id" => tid})

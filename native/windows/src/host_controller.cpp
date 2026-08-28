@@ -1152,5 +1152,15 @@ jsonutil::Json HostController::handle_test(const std::string& method, const json
   if (method == "test.crash") {
     ExitProcess(2);
   }
+  if (method == "test.notification.emit_click" || method == "test.notification.emit_dismiss") {
+    const char* ev = method == "test.notification.emit_click" ? "event.notification.click"
+                                                              : "event.notification.dismiss";
+    std::string nid;
+    if (params.contains("notification_id") && params["notification_id"].is_string()) {
+      nid = params["notification_id"].get<std::string>();
+    }
+    server_.notify(ev, jsonutil::Json{{"notification_id", nid}});
+    return jsonutil::rpc_ok(id, true);
+  }
   return jsonutil::rpc_error(id, -32601, "Unknown test method");
 }

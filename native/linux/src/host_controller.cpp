@@ -1013,5 +1013,21 @@ JsonNode* HostController::handle_test(const std::string& method, JsonNode* param
   if (method == "test.crash") {
     _exit(2);
   }
+  if (method == "test.notification.emit_click" || method == "test.notification.emit_dismiss") {
+    const char* ev =
+        method == "test.notification.emit_click" ? "event.notification.click"
+                                                 : "event.notification.dismiss";
+    std::string nid;
+    if (params && json_object_has_member(params, "notification_id")) {
+      nid = json_object_get_string_member(params, "notification_id");
+    }
+    JsonObject* o = json_object_new();
+    json_object_set_string_member(o, "notification_id", nid.c_str());
+    JsonNode* n = json_node_alloc();
+    json_node_init_object(n, o);
+    json_object_unref(o);
+    server_.notify(ev, n);
+    return jsonutil::rpc_ok(id, jsonutil::bool_node(true));
+  }
   return jsonutil::rpc_error(id, -32601, "Unknown test method");
 }

@@ -409,8 +409,7 @@ final class HostController: NSObject, UNUserNotificationCenterDelegate {
             return .bool(w.window.isKeyWindow)
         case "window.raise":
             let w = try win(params)
-            NSApp.activate(ignoringOtherApps: true)
-            w.window.makeKeyAndOrderFront(nil)
+            raiseWindow(w)
             return .bool(true)
         case "window.close_veto":
             _ = try win(params)
@@ -650,9 +649,22 @@ final class HostController: NSObject, UNUserNotificationCenterDelegate {
             return .ok(id: id, result: .bool(true))
         case "test.crash":
             exit(2)
+        case "test.notification.emit_click":
+            return emitNotificationEvent("event.notification.click", params: params, id: id)
+        case "test.notification.emit_dismiss":
+            return emitNotificationEvent("event.notification.dismiss", params: params, id: id)
         default:
             return .fail(id: id, code: -32601, message: "Unknown test method")
         }
+    }
+
+    private func emitNotificationEvent(_ method: String, params: JSONValue?, id: JSONValue?) -> JSONRPC.Response {
+        let nid = params?["notification_id"]?.stringValue ?? ""
+        server.notify(
+            method: method,
+            params: .object(["notification_id": .string(nid)])
+        )
+        return .ok(id: id, result: .bool(true))
     }
 
     // MARK: - helpers
@@ -698,8 +710,7 @@ final class HostController: NSObject, UNUserNotificationCenterDelegate {
         }
         windows[windowId] = ctrl
         webviews[webviewId] = windowId
-        ctrl.window.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        raiseWindow(ctrl)
         return .object(["window_id": .string(windowId), "webview_id": .string(webviewId)])
     }
 
@@ -716,11 +727,21 @@ final class HostController: NSObject, UNUserNotificationCenterDelegate {
     private func windowShow(_ params: JSONValue?, show: Bool) throws -> JSONValue {
         let w = try win(params)
         if show {
-            w.window.makeKeyAndOrderFront(nil)
+            raiseWindow(w)
         } else {
             w.window.orderOut(nil)
         }
         return .bool(true)
+    }
+
+    /// Deminiaturize before activate/orderFront so AppKit does not start competing
+    /// `_NSWindowTransformAnimation`s (notification-click / dock activate path).
+    private func raiseWindow(_ w: WebWindowController) {
+        if w.window.isMiniaturized {
+            w.window.deminiaturize(nil)
+        }
+        NSApp.activate(ignoringOtherApps: true)
+        w.window.makeKeyAndOrderFront(nil)
     }
 
     private func menuCreate(_ params: JSONValue?) throws -> JSONValue {
