@@ -62,7 +62,13 @@ backend is active. It translates host notifications into elixir-desktop messages
 | `event.system.open_file` | `Desktop.Env.notify_subscribers({:open_file, [path]})` |
 | `event.system.reopen` | `{:reopen_app, []}` to `Desktop.Env` |
 | `event.menu.click` | `GenServer.cast(menu, {:trigger_event, onclick})` |
+| `event.notification.click` | `send(window, {:edw_notification, id, :click})` |
+| `event.notification.dismiss` | `send(window, {:edw_notification, id, :dismiss})` |
 | `event.webview.new_window` | `system.open_url` (external browser) |
+
+`Desktop.Window` handles `{:edw_notification, id, action}` and runs the callback
+registered via `Desktop.Window.show_notification/3`. Pass a stable `:id` so the
+host notification id matches the Window map key.
 
 Do **not** subscribe `Desktop.Env` directly to Transport — raw `{:edw_event, ...}`
 messages are not in the Env contract.

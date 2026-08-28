@@ -33,6 +33,18 @@ defmodule DesktopWebview.EventBridgeTest do
     assert_receive {:"$gen_cast", {:trigger_event, "quit"}}, 500
   end
 
+  test "notification.click delivers edw_notification", %{bridge: bridge} do
+    EventBridge.register_notification("nid-1", self())
+    send(bridge, {:edw_event, "event.notification.click", %{"notification_id" => "nid-1"}})
+    assert_receive {:edw_notification, "nid-1", :click}, 500
+  end
+
+  test "notification.dismiss delivers edw_notification", %{bridge: bridge} do
+    EventBridge.register_notification("nid-2", self())
+    send(bridge, {:edw_event, "event.notification.dismiss", %{"notification_id" => "nid-2"}})
+    assert_receive {:edw_notification, "nid-2", :dismiss}, 500
+  end
+
   test "quit invokes configured quit_fun", %{bridge: bridge} do
     test = self()
     Application.put_env(:desktop_webview, :quit_fun, fn -> send(test, :quit_requested) end)
