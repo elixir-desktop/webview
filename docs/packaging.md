@@ -32,17 +32,21 @@ Default when the host runs as a normal Win32 process (installer or portable zip)
 
 ```
 MyApp/
-  DesktopWebView.exe
-  DesktopWebView.ini              # optional, beside the exe
+  MyApp.exe                       # native host (package.name.exe or host_executable)
+  MyApp.ini                       # optional, beside the exe (<exe_basename>.ini)
   beam/
     bin/
       my_app.bat                  # or my_app (escript/release)
     ...
 ```
 
-- Ini discovery: `--edw-config` → `DesktopWebView.ini` beside the executable.
+- Installed host name defaults to `package.name` + `.exe` on Windows host-first
+  (override with `package.host_executable`). The source binary may still be
+  `DesktopWebView.exe` from `desktop_webview` / `DESKTOP_HOST_BINARY`.
+- Ini discovery: `--edw-config` → `<exe_basename>.ini` beside the executable →
+  `DesktopWebView.ini` beside the executable.
 - Relative `beam.path` / `working_dir` resolve against the directory containing
-  `DesktopWebView.exe`.
+  the host executable.
 - Forwarded argv and `EDW_PORT` / `EDW_HOST` are unchanged.
 - Release asset name: `DesktopWebView-windows-x64.exe` (see Binaries).
 - WebView2: document Evergreen Runtime dependency in the app installer; the host
@@ -82,8 +86,9 @@ MyApp/
 ## Config discovery
 
 1. `--edw-config=/path/to.ini`
-2. `DesktopWebView.ini` beside the executable
-3. macOS only: `Contents/Resources/DesktopWebView.ini` (app bundle)
+2. `<exe_basename>.ini` beside the executable (e.g. `dDrive.ini` for `dDrive.exe`)
+3. `DesktopWebView.ini` beside the executable
+4. macOS only: `Contents/Resources/DesktopWebView.ini` (app bundle)
 
 ### Example ini
 

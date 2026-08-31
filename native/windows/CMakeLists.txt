@@ -30,7 +30,7 @@ else()
   set(WEBVIEW2_LIB_DIR "${WEBVIEW2_ROOT}/build/native/x86")
 endif()
 
-add_executable(DesktopWebView
+add_executable(DesktopWebView WIN32
   src/main.cpp
   src/config.cpp
   src/json_util.cpp
