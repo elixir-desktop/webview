@@ -661,7 +661,8 @@ jsonutil::Json HostController::menu_update(const jsonutil::Json& params) {
 }
 
 void HostController::update_tray_icon(TrayEntry& tray) {
-  HICON icon = LoadIconW(nullptr, IDI_APPLICATION);
+  HICON icon = extract_module_icon();
+  if (!icon) icon = LoadIconW(nullptr, IDI_APPLICATION);
   if (!tray.icon_id.empty()) {
     auto it = icons_.find(tray.icon_id);
     if (it != icons_.end() && it->second.icon) icon = it->second.icon;
@@ -694,10 +695,13 @@ jsonutil::Json HostController::icon_create(const jsonutil::Json& params) {
   auto id = next_id("icon");
   IconEntry icon;
   if (auto path = jsonutil::get_string(params, "path")) {
-    icon.icon = static_cast<HICON>(LoadImageW(nullptr, utf8_to_wide(*path).c_str(), IMAGE_ICON, 0, 0,
-                                              LR_LOADFROMFILE | LR_DEFAULTSIZE));
+    // Prefer ICO via LoadImage; fall back to GDI+ for PNG/JPEG (diode.png etc.).
+    icon.icon = load_hicon_from_file(utf8_to_wide(*path));
+  } else {
+    // Default / missing path: use the host executable's embedded icon.
+    icon.icon = extract_module_icon();
   }
-  // png_base64 accepted for protocol compatibility; decoding deferred (status: partial).
+  // png_base64 still deferred; callers should pass a filesystem path for now.
   icons_[id] = std::move(icon);
   return jsonutil::Json{{"icon_id", id}};
 }
