@@ -60,6 +60,7 @@ target_link_libraries(DesktopWebView PRIVATE
   shell32
   user32
   gdi32
+  gdiplus
   comctl32
   advapi32
   shlwapi

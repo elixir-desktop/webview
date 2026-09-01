@@ -22,6 +22,10 @@ void WebWindow::register_class() {
   wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
   wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
   wc.lpszClassName = kClassName;
+  // Title-bar/taskbar icons come from the class (or WM_SETICON). Without these,
+  // Windows shows a blank default even when the .exe has an embedded icon.
+  wc.hIcon = extract_module_icon();
+  wc.hIconSm = extract_module_icon();
   RegisterClassExW(&wc);
   g_class_registered = true;
 }

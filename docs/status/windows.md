@@ -26,7 +26,7 @@ Release asset: `DesktopWebView-windows-x64.exe` (GitHub Releases; not Hex `priv/
 | Tray / status item | done | `Shell_NotifyIcon`; E2E tray create |
 | Apple menu | n/a | Successful no-op |
 | Notifications | done | Balloon via tray when present; E2E |
-| Icons from path / PNG | partial | Path/ICO via `LoadImage`; PNG→HICON deferred |
+| Icons from path / PNG | done | ICO via `LoadImage`; PNG/JPEG via GDI+ `Bitmap::GetHICON`; class/default from exe |
 | OS events (reopen, open url/file) | partial | `system.open_url` done; OS reopen/file events not wired |
 | Locale / os_description | done | E2E |
 | Permission policy hybrid | done | E2E simulate + policy |

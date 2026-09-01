@@ -2,7 +2,11 @@
 
 #include "win_prefix.hpp"
 
+#include <gdiplus.h>
+
 #include <cctype>
+#include <cwchar>
+#include <cwctype>
 #include <optional>
 #include <string>
 
@@ -44,4 +48,55 @@ inline bool file_exists(const std::string& path) {
 inline bool is_absolute_path(const std::string& p) {
   if (p.size() >= 2 && std::isalpha(static_cast<unsigned char>(p[0])) && p[1] == ':') return true;
   return p.size() >= 2 && p[0] == '\\' && p[1] == '\\';
+}
+
+inline bool ends_with_ignore_case(const std::wstring& s, const wchar_t* suffix) {
+  const size_t n = wcslen(suffix);
+  if (s.size() < n) return false;
+  for (size_t i = 0; i < n; i++) {
+    wchar_t a = towlower(s[s.size() - n + i]);
+    wchar_t b = towlower(suffix[i]);
+    if (a != b) return false;
+  }
+  return true;
+}
+
+// LoadImage(IMAGE_ICON) only accepts .ico. App icons are often PNG (e.g. diode.png);
+// use GDI+ so window/taskbar icons are not left blank.
+inline HICON load_hicon_from_file(const std::wstring& path) {
+  if (path.empty()) return nullptr;
+
+  HICON icon = static_cast<HICON>(
+      LoadImageW(nullptr, path.c_str(), IMAGE_ICON, 0, 0, LR_LOADFROMFILE | LR_DEFAULTSIZE));
+  if (icon) return icon;
+
+  if (!ends_with_ignore_case(path, L".png") && !ends_with_ignore_case(path, L".jpg") &&
+      !ends_with_ignore_case(path, L".jpeg") && !ends_with_ignore_case(path, L".bmp") &&
+      !ends_with_ignore_case(path, L".gif")) {
+    return nullptr;
+  }
+
+  static ULONG_PTR gdiplus_token = 0;
+  static bool gdiplus_ready = false;
+  if (!gdiplus_ready) {
+    Gdiplus::GdiplusStartupInput input;
+    gdiplus_ready = Gdiplus::GdiplusStartup(&gdiplus_token, &input, nullptr) == Gdiplus::Ok;
+  }
+  if (!gdiplus_ready) return nullptr;
+
+  Gdiplus::Bitmap bitmap(path.c_str());
+  if (bitmap.GetLastStatus() != Gdiplus::Ok) return nullptr;
+  HICON from_png = nullptr;
+  if (bitmap.GetHICON(&from_png) != Gdiplus::Ok) return nullptr;
+  return from_png;
+}
+
+inline HICON extract_module_icon() {
+  wchar_t module[MAX_PATH]{};
+  HINSTANCE inst = GetModuleHandleW(nullptr);
+  if (!GetModuleFileNameW(inst, module, MAX_PATH)) return nullptr;
+  HICON icon = ExtractIconW(inst, module, 0);
+  // ExtractIcon returns 1 when the file has no icons.
+  if (!icon || icon == reinterpret_cast<HICON>(static_cast<uintptr_t>(1))) return nullptr;
+  return icon;
 }
