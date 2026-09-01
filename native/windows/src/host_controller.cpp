@@ -317,11 +317,16 @@ void HostController::spawn_beam() {
     return;
   }
   std::string script = join_path(join_path(beam_dir, "bin"), app_name);
-  if (!file_exists(script)) {
-    if (file_exists(script + ".bat"))
-      script += ".bat";
-    else if (file_exists(script + ".cmd"))
-      script += ".cmd";
+  // Mix releases ship both a Unix `bin/<app>` shell script and `bin/<app>.bat`.
+  // Prefer the batch file when present so CreateProcess does not attempt to
+  // execute the extensionless shell script (Windows error 193).
+  if (file_exists(script + ".bat"))
+    script += ".bat";
+  else if (file_exists(script + ".cmd"))
+    script += ".cmd";
+  else if (!file_exists(script)) {
+    fprintf(stderr, "edw: beam script not found: %s\n", script.c_str());
+    return;
   }
   std::string wd =
       config_.beam_working_dir
@@ -367,8 +372,12 @@ void HostController::spawn_beam() {
   }
   env_block.push_back(L'\0');
 
+  // OTP 26's user/logger need a real console (NUL triggers `nouser`; missing
+  // handles crash logger). Give BEAM a hidden private console.
   STARTUPINFOW si{};
   si.cb = sizeof(si);
+  si.dwFlags = STARTF_USESHOWWINDOW;
+  si.wShowWindow = SW_HIDE;
   PROCESS_INFORMATION pi{};
   std::wstring wcmd = utf8_to_wide(cmdline);
   std::wstring wwd = utf8_to_wide(wd);
@@ -381,8 +390,9 @@ void HostController::spawn_beam() {
     beam_process_ = nullptr;
   }
 
-  if (!CreateProcessW(nullptr, mutable_cmd.data(), nullptr, nullptr, FALSE, CREATE_UNICODE_ENVIRONMENT,
-                      env_block.data(), wwd.c_str(), &si, &pi)) {
+  DWORD flags = CREATE_UNICODE_ENVIRONMENT | CREATE_NEW_CONSOLE;
+  if (!CreateProcessW(nullptr, mutable_cmd.data(), nullptr, nullptr, FALSE, flags, env_block.data(),
+                      wwd.c_str(), &si, &pi)) {
     fprintf(stderr, "edw: failed to spawn beam (%lu): %s\n", GetLastError(), cmdline.c_str());
     return;
   }

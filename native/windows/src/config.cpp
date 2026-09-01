@@ -120,7 +120,21 @@ std::string HostConfig::resources_root() const {
 
 std::optional<std::string> HostConfig::resolve_ini_path() const {
   if (config_path) return *config_path;
-  auto beside = join_path(resources_root(), "DesktopWebView.ini");
+  auto root = resources_root();
+  // Prefer <exe_basename>.ini so renamed hosts (e.g. dDrive.exe → dDrive.ini)
+  // pick up the packaged config; fall back to the conventional name.
+  char buf[MAX_PATH];
+  DWORD n = GetModuleFileNameA(nullptr, buf, MAX_PATH);
+  if (n > 0 && n < MAX_PATH) {
+    std::string exe = buf;
+    auto slash = exe.find_last_of("/\\");
+    std::string base = (slash == std::string::npos) ? exe : exe.substr(slash + 1);
+    auto dot = base.find_last_of('.');
+    if (dot != std::string::npos) base = base.substr(0, dot);
+    auto beside_exe = join_path(root, base + ".ini");
+    if (file_exists(beside_exe)) return beside_exe;
+  }
+  auto beside = join_path(root, "DesktopWebView.ini");
   if (file_exists(beside)) return beside;
   return std::nullopt;
 }

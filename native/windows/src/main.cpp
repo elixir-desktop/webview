@@ -22,7 +22,7 @@ std::vector<std::string> argv_utf8() {
 
 }  // namespace
 
-int main(int, char**) {
+int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
   HRESULT hr = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
   if (FAILED(hr)) {
     fprintf(stderr, "edw: CoInitializeEx failed\n");
