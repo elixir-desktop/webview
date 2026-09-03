@@ -112,7 +112,7 @@ defmodule DesktopWebview.E2ETest do
                "url" => fixture_url("file_input.html")
              })
 
-    Process.sleep(400)
+    assert :ok = wait_for_file_input(vid)
 
     # The shared test RPC can inspect DOM state, but cannot drive a native picker.
     assert {:ok, result} =
@@ -396,5 +396,29 @@ defmodule DesktopWebview.E2ETest do
   defp fixture_url(filename) do
     html = File.read!(Path.expand("test/fixtures/#{filename}"))
     "data:text/html;base64," <> Base.encode64(html)
+  end
+
+  defp wait_for_file_input(webview_id, attempts \\ 30)
+
+  defp wait_for_file_input(_webview_id, 0), do: :error
+
+  defp wait_for_file_input(webview_id, attempts) do
+    ready? =
+      case Transport.call("test.webview.eval", %{
+             "webview_id" => webview_id,
+             "script" =>
+               "document.readyState === \"complete\" && " <>
+                 "document.querySelector(\"#single-file\") !== null"
+           }) do
+        {:ok, true} -> true
+        _ -> false
+      end
+
+    if ready? do
+      :ok
+    else
+      Process.sleep(100)
+      wait_for_file_input(webview_id, attempts - 1)
+    end
   end
 end
