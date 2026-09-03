@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>EDW File Input Fixture</title>
+  </head>
+  <body>
+    <h1>HTML file input fixture</h1>
+    <p id="status">ready</p>
+    <p>Use this page to check single-file, multiple-file, and directory selection.</p>
+
+    <form>
+      <label>
+        Single file
+        <input id="single-file" type="file" accept=".txt,text/plain" />
+      </label>
+      <br />
+      <label>
+        Multiple files
+        <input id="multiple-files" type="file" multiple />
+      </label>
+      <br />
+      <label>
+        Directory
+        <input id="directory-files" type="file" multiple webkitdirectory directory />
+      </label>
+    </form>
+
+    <script>
+      const status = document.getElementById("status");
+
+      for (const input of document.querySelectorAll('input[type="file"]')) {
+        input.addEventListener("change", () => {
+          status.textContent = `${input.id}:changed`;
+        });
+        input.addEventListener("cancel", () => {
+          status.textContent = `${input.id}:cancelled`;
+        });
+      }
+    </script>
+  </body>
+</html>

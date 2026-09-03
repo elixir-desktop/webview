@@ -21,6 +21,16 @@ Output is copied to `priv/native/macos/DesktopWebView` (universal when both arch
 # prints: listening <port>
 ```
 
+## HTML file inputs
+
+`<input type="file">` uses the `WKUIDelegate` open-panel callback in
+`WebWindow.swift`. The callback maps single, multiple, directory, and cancel
+actions to WebKit's `FileList`.
+
+The shared E2E checks the fixture DOM, but it cannot drive the macOS picker.
+Manually verify selection and cancellation with
+`test/fixtures/file_input.html`, including after `webview.rebuild`.
+
 ## Structure
 
 | File | Role |

@@ -71,8 +71,7 @@ defmodule DesktopWebview.E2ETest do
                "height" => 480
              })
 
-    html = File.read!(Path.expand("test/fixtures/media.html"))
-    url = "data:text/html;charset=utf-8," <> URI.encode(html)
+    url = fixture_url("media.html")
 
     assert {:ok, true} = Transport.call("webview.load_url", %{"webview_id" => vid, "url" => url})
     # Give the engine a moment
@@ -95,6 +94,65 @@ defmodule DesktopWebview.E2ETest do
              Transport.call("webview.rebuild", %{"window_id" => wid})
 
     assert is_binary(vid2)
+
+    assert {:ok, true} = Transport.call("window.destroy", %{"window_id" => wid})
+  end
+
+  test "HTML file input fixture exposes chooser semantics" do
+    assert {:ok, %{"window_id" => wid, "webview_id" => vid}} =
+             Transport.call("window.open", %{
+               "title" => "File input",
+               "width" => 640,
+               "height" => 480
+             })
+
+    assert {:ok, true} =
+             Transport.call("webview.load_url", %{
+               "webview_id" => vid,
+               "url" => fixture_url("file_input.html")
+             })
+
+    Process.sleep(400)
+
+    # The shared test RPC can inspect DOM state, but cannot drive a native picker.
+    assert {:ok, result} =
+             Transport.call(
+               "test.webview.eval",
+               %{
+                 "webview_id" => vid,
+                 "script" => """
+                 JSON.stringify({
+                   single: {
+                     type: document.querySelector("#single-file").type,
+                     multiple: document.querySelector("#single-file").multiple
+                   },
+                   multiple: {
+                     type: document.querySelector("#multiple-files").type,
+                     multiple: document.querySelector("#multiple-files").multiple
+                   },
+                   directory: {
+                     type: document.querySelector("#directory-files").type,
+                     multiple: document.querySelector("#directory-files").multiple,
+                     webkitdirectory: document.querySelector("#directory-files").hasAttribute("webkitdirectory"),
+                     directory: document.querySelector("#directory-files").hasAttribute("directory")
+                   }
+                 })
+                 """
+               },
+               15_000
+             )
+
+    assert {:ok,
+            %{
+              "single" => %{"type" => "file", "multiple" => false},
+              "multiple" => %{"type" => "file", "multiple" => true},
+              "directory" => %{
+                "type" => "file",
+                "multiple" => true,
+                "webkitdirectory" => true,
+                "directory" => true
+              }
+            }} = Jason.decode(result)
 
     assert {:ok, true} = Transport.call("window.destroy", %{"window_id" => wid})
   end
@@ -243,8 +301,7 @@ defmodule DesktopWebview.E2ETest do
     assert {:ok, %{"window_id" => _wid, "webview_id" => vid}} =
              Transport.call("window.open", %{"title" => "Media", "width" => 400, "height" => 300})
 
-    html = File.read!(Path.expand("test/fixtures/media.html"))
-    url = "data:text/html;charset=utf-8," <> URI.encode(html)
+    url = fixture_url("media.html")
 
     assert {:ok, true} =
              Transport.call("webview.load_url", %{"webview_id" => vid, "url" => url})
@@ -334,5 +391,10 @@ defmodule DesktopWebview.E2ETest do
         assert {:error, %{"code" => -32601, "message" => "Unknown test method"}} =
                  Transport.call("test.menu.list", %{})
     end
+  end
+
+  defp fixture_url(filename) do
+    html = File.read!(Path.expand("test/fixtures/#{filename}"))
+    "data:text/html;base64," <> Base.encode64(html)
   end
 end
