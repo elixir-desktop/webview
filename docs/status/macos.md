@@ -32,7 +32,8 @@ manual-only with justification).
 | Permission policy hybrid | done | |
 | Microphone in webview | done | E2E via test RPC + fixture |
 | Camera in webview | done | E2E via test RPC + fixture |
-| Dialog choose file/dir | done | `NSOpenPanel` (manual; blocks RPC) |
+| Native dialogs (`dialog.choose_file/dir`) | done | `NSOpenPanel` (manual; blocks RPC) |
+| HTML `<input type=file>` | partial | `WKUIDelegate` open-panel hook; native selection and cancellation checks pending |
 | Dialog prompt | done | `NSAlert` + text field (manual) |
 | EventBridge Env/Window/Menu | done | Elixir unit coverage |
 | Test RPC channel | done | `--edw-test-rpc` |

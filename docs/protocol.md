@@ -129,6 +129,31 @@ section disagree, **fix the host** and keep this section as the contract.
 - `webview.rebuild` replaces the engine view inside the same window and returns
   a **new** `webview_id` (old id becomes invalid).
 
+### HTML file inputs
+
+`<input type="file">` is a required webview feature on macOS, Windows, and Linux.
+It is distinct from `dialog.choose_file`: the former is started by web content and
+populates the browser's `FileList`; the latter is an explicit Elixir RPC that
+returns a path.
+
+Every host MUST provide the web engine's native file chooser path and preserve
+these semantics:
+
+- Without `multiple`, the chooser returns at most one file.
+- With `multiple`, it returns every selected file.
+- With `webkitdirectory` (and the engine's directory mode), the user selects a
+  directory and the webview receives its files recursively, not one directory
+  path.
+- Cancel completes with no new selection. It does not clear the current
+  selection or report a new `change` event.
+- `accept` filters should be passed to the native chooser when the engine
+  exposes them. Applications still validate selected files.
+
+The platform hooks for this behavior are listed in [porting.md](porting.md).
+The shared E2E may inspect the fixture's DOM, but it cannot select files or
+populate a `FileList` through JavaScript. Native picker selection and cancellation
+remain manual checks until a supported platform test hook exists.
+
 ### Menus and tray
 
 - The macOS host installs a default `Edit` submenu on the main menu (Undo, Redo,
@@ -275,8 +300,9 @@ Events: `event.menu.click` (`menu_id`, `onclick`), `event.tray.click`.
 | `dialog.choose_directory` | `title?`, `default_path?` | `{path}` or `null` |
 | `dialog.prompt` | `title`, `message`, `default_value?` | `{value}` or `null` |
 
-macOS: `NSOpenPanel` / `NSAlert`. Linux/Windows: may return error `-32004` until ported.
-AppKit dialogs run on the host main thread and block the RPC until dismissed.
+macOS: `NSOpenPanel` / `NSAlert`; Windows: `IFileOpenDialog` / Win32 prompt.
+Linux returns error `-32004` until ported. These RPCs do not implement HTML file
+inputs. AppKit dialogs run on the host main thread and block the RPC until dismissed.
 
 ### Notification / media / system
 

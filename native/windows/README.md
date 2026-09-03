@@ -33,6 +33,25 @@ $env:DESKTOP_WEBVIEW_BINARY = "$PWD\priv\native\windows\DesktopWebView.exe"
 mix test.e2e
 ```
 
+## HTML file inputs
+
+Normal HTML file inputs use WebView2's built-in Windows file picker:
+
+- `<input type="file">` selects one file by default.
+- `<input type="file" multiple>` can select multiple files.
+- If the user cancels, the input receives no new files and the page receives no new selection.
+- No host C++ change, JSON-RPC call, CDP interception, or custom picker is needed. The page reads selected files through the normal HTML `input.files` API.
+
+The picker needs an interactive Windows desktop and a working Microsoft Edge
+WebView2 Evergreen Runtime. It cannot show from a service, a headless run, or a
+non-interactive session. Runtime or Windows security restrictions can also
+prevent native UI from appearing, so test with a current runtime in a normal
+desktop session.
+
+This browser feature is separate from the [`dialog.choose_file` JSON-RPC
+method](../../docs/protocol.md#dialog). That method is an explicit host dialog
+request for code that needs a path returned through the Elixir transport.
+
 ## Structure
 
 | Path | Role |

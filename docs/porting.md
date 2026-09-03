@@ -44,6 +44,22 @@ Do **not** copy macOS UI code into other platforms — share only the protocol.
 10. **Packaged BEAM spawn** + **CI artifact** on tag draft releases
 11. **Test RPC** behind `--edw-test-rpc`; run shared E2E
 
+## HTML file chooser
+
+`<input type="file">` is required on every platform. It is separate from
+`dialog.choose_file`, which is an explicit Elixir RPC. Follow the semantics in
+[protocol.md](protocol.md) and use the platform hook below.
+
+| Platform | Hook | Required integration |
+|----------|------|----------------------|
+| macOS | `WKUIDelegate.webView(_:runOpenPanelWith:initiatedByFrame:completionHandler:)` | Map `WKOpenPanelParameters` to the native panel. Pass selected URLs to the completion handler, or `nil` on cancel. |
+| Windows | WebView2's built-in file picker | Keep the WebView2 UI thread and message loop active. WebView2 has no native file-chooser event for this input; do not replace it with `dialog.choose_file` or CDP file injection. |
+| Linux | WebKitGTK `run-file-chooser` default handler | Keep WebKitGTK's asynchronous default handler enabled, or provide an equivalent handler that completes the request with selected paths or cancellation. |
+
+The shared E2E checks the fixture's DOM contract only. It cannot drive a native
+picker or inject a `FileList`; selection, cancellation, multiple files, and
+directory selection need manual checks until a supported platform test hook exists.
+
 ## Toolchain expectations
 
 ### Windows (`native/windows/`)
@@ -95,6 +111,7 @@ Before flipping a status row to `done`, the corresponding E2E (or an added E2E) 
 | Menu / tray / icon / notification | `menu create and notification` |
 | Session reset | `session reset wipes tray and windows` |
 | Permissions + JS eval | `permission policy and simulate` |
+| HTML file input DOM contract | `HTML file input fixture exposes chooser semantics` |
 | Locale / OS string | `system locale and os_description` |
 
 Platform-specific asserts (e.g. `caps["platform"] == "macos"`) must be generalized when the second host lands — use `:os.type()` / host `initialize.platform`.
