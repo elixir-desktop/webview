@@ -26,7 +26,9 @@ Output is copied to `priv/native/macos/DesktopWebView` (universal when both arch
 `<input type="file">` uses the `WKUIDelegate` open-panel callback in
 `WebWindow.swift`. The callback maps single, multiple, directory, and cancel
 actions to WebKit's `FileList`. `FileDropWebView.swift` registers file URLs and
-file promises, accepts Finder drops, and forwards the drop methods to WebKit.
+file promises and installs a runtime bridge on WebKit's private content view.
+The bridge preserves WebKit's original drag methods after accepting Finder
+drops.
 
 The shared E2E checks the fixture DOM, but it cannot drive the macOS picker or
 Finder. Manually verify selection, cancellation, multiple files, directory

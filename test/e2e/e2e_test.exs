@@ -135,7 +135,8 @@ defmodule DesktopWebview.E2ETest do
                      multiple: document.querySelector("#directory-files").multiple,
                      webkitdirectory: document.querySelector("#directory-files").hasAttribute("webkitdirectory"),
                      directory: document.querySelector("#directory-files").hasAttribute("directory")
-                   }
+                   },
+                   drop_target: document.querySelector("#drop-target").id
                  })
                  """
                },
@@ -151,7 +152,8 @@ defmodule DesktopWebview.E2ETest do
                 "multiple" => true,
                 "webkitdirectory" => true,
                 "directory" => true
-              }
+              },
+              "drop_target" => "drop-target"
             }} = Jason.decode(result)
 
     assert {:ok, true} = Transport.call("window.destroy", %{"window_id" => wid})
