@@ -44,21 +44,23 @@ Do **not** copy macOS UI code into other platforms — share only the protocol.
 10. **Packaged BEAM spawn** + **CI artifact** on tag draft releases
 11. **Test RPC** behind `--edw-test-rpc`; run shared E2E
 
-## HTML file chooser
+## HTML file inputs and file-manager drag-and-drop
 
-`<input type="file">` is required on every platform. It is separate from
-`dialog.choose_file`, which is an explicit Elixir RPC. Follow the semantics in
-[protocol.md](protocol.md) and use the platform hook below.
+`<input type="file">` and file-manager drag-and-drop are required on every
+platform. They are separate from `dialog.choose_file`, which is an explicit
+Elixir RPC. Follow the semantics in [protocol.md](protocol.md) and use the
+platform hooks below.
 
-| Platform | Hook | Required integration |
+| Platform | Hooks | Required integration |
 |----------|------|----------------------|
-| macOS | `WKUIDelegate.webView(_:runOpenPanelWith:initiatedByFrame:completionHandler:)` | Map `WKOpenPanelParameters` to the native panel. Pass selected URLs to the completion handler, or `nil` on cancel. |
-| Windows | WebView2's built-in file picker | Keep the WebView2 UI thread and message loop active. WebView2 has no native file-chooser event for this input; do not replace it with `dialog.choose_file` or CDP file injection. |
-| Linux | WebKitGTK `run-file-chooser` default handler | Keep WebKitGTK's asynchronous default handler enabled, or provide an equivalent handler that completes the request with selected paths or cancellation. |
+| macOS | `WKUIDelegate.webView(_:runOpenPanelWith:initiatedByFrame:completionHandler:)` and `NSDraggingDestination` | Map `WKOpenPanelParameters` to the native panel. Register file URLs and file promises on the webview. Forward accepted drag methods to WebKit so the page receives its `FileList`. |
+| Windows | WebView2's built-in file picker and drag handling | Keep the WebView2 UI thread and message loop active. Do not replace the picker or file drops with `dialog.choose_file`, CDP injection, or a host-only drop handler. |
+| Linux | WebKitGTK `run-file-chooser` default handler and drag handling | Keep the asynchronous chooser and normal WebKitGTK drag handling enabled. Provide equivalent handlers only when they preserve the page `drop` event and `dataTransfer.files`. |
 
 The shared E2E checks the fixture's DOM contract only. It cannot drive a native
 picker or inject a `FileList`; selection, cancellation, multiple files, and
-directory selection need manual checks until a supported platform test hook exists.
+directory selection, and file-manager drops need manual checks until a supported
+platform test hook exists.
 
 ## Toolchain expectations
 

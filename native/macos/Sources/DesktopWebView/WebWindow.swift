@@ -38,7 +38,7 @@ final class WebWindowController: NSObject, NSWindowDelegate, WKUIDelegate, WKNav
         if #available(macOS 14.0, *) {
             // media capture handled via UI delegate
         }
-        let wv = WKWebView(frame: rect, configuration: config)
+        let wv = FileDropWebView(frame: rect, configuration: config)
         wv.allowsBackForwardNavigationGestures = true
         self.webView = wv
         super.init()
@@ -53,7 +53,7 @@ final class WebWindowController: NSObject, NSWindowDelegate, WKUIDelegate, WKNav
         let config = WKWebViewConfiguration()
         config.mediaTypesRequiringUserActionForPlayback = []
         let frame = webView.frame
-        let wv = WKWebView(frame: frame, configuration: config)
+        let wv = FileDropWebView(frame: frame, configuration: config)
         wv.uiDelegate = self
         wv.navigationDelegate = self
         window.contentView = wv

@@ -33,7 +33,7 @@ Release asset: `DesktopWebView-windows-x64.exe` (GitHub Releases; not Hex `priv/
 | Microphone in webview | done | Permission RPC + WebView2 kinds |
 | Camera in webview | done | Permission RPC + WebView2 kinds |
 | Native dialogs (`dialog.choose_file/dir`) | done | IFileOpenDialog + Win32 prompt |
-| HTML `<input type=file>` | partial | WebView2's built-in picker; native selection and cancellation checks pending |
+| HTML `<input type=file>` and Explorer drag-and-drop | partial | WebView2 built-in picker and drag handling; native picker and Explorer checks pending |
 | Host-driven BEAM restart | done | `restart_beam` ini + process wait |
 | Test RPC channel | done | E2E |
 | Release artifact download | todo | Elixir fetch/cache still pending |

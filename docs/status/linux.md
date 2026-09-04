@@ -32,7 +32,7 @@ Host: GTK 4 + WebKitGTK 6 (`native/linux/`). Binary delivery via GitHub Releases
 | Permission policy hybrid | done | |
 | Microphone in webview | done | E2E via test RPC + fixture |
 | Camera in webview | done | E2E via test RPC + fixture |
-| HTML `<input type=file>` | partial | WebKitGTK's asynchronous `run-file-chooser` default handler; native selection and cancellation checks pending |
+| HTML `<input type=file>` and file-manager drag-and-drop | partial | WebKitGTK default chooser and drag handling; native picker and file-manager checks pending |
 | Test RPC channel | done | `--edw-test-rpc` |
 | Release artifact download | todo | |
 | CI build | done | ubuntu-latest + xvfb |
