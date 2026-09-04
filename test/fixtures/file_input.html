@@ -25,9 +25,11 @@
         <input id="directory-files" type="file" multiple webkitdirectory directory />
       </label>
     </form>
+    <p id="drop-target">Drop files here to test file-manager drag-and-drop.</p>
 
     <script>
       const status = document.getElementById("status");
+      const dropTarget = document.getElementById("drop-target");
 
       for (const input of document.querySelectorAll('input[type="file"]')) {
         input.addEventListener("change", () => {
@@ -37,6 +39,12 @@
           status.textContent = `${input.id}:cancelled`;
         });
       }
+
+      dropTarget.addEventListener("dragover", (event) => event.preventDefault());
+      dropTarget.addEventListener("drop", (event) => {
+        event.preventDefault();
+        status.textContent = `drop:${event.dataTransfer.files.length}`;
+      });
     </script>
   </body>
 </html>
