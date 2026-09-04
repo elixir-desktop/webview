@@ -14,9 +14,12 @@ spawns the BEAM release; in development an existing BEAM can launch the host wit
 | Windows | WebView2 | Done — [docs/status/windows.md](docs/status/windows.md) |
 | Linux | WebKitGTK | Usable — [docs/status/linux.md](docs/status/linux.md) |
 
-HTML `<input type="file">` support is required on all three hosts. The shared E2E
-checks the fixture's DOM contract; native picker selection remains a manual check.
-It is separate from the `dialog.choose_file` RPC. See [docs/protocol.md](docs/protocol.md).
+HTML `<input type="file">` support and file-manager drag-and-drop are required on
+all three hosts. Finder, Explorer, and Linux file-manager drops must reach the
+page as normal web drag events with a usable `DataTransfer.files` list. The
+shared E2E checks the fixture's DOM contract; native picker and file-drop checks
+remain manual. These features are separate from the `dialog.choose_file` RPC.
+See [docs/protocol.md](docs/protocol.md).
 
 ## Quick start (development)
 

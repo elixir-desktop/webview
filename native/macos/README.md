@@ -21,15 +21,17 @@ Output is copied to `priv/native/macos/DesktopWebView` (universal when both arch
 # prints: listening <port>
 ```
 
-## HTML file inputs
+## HTML file inputs and Finder drops
 
 `<input type="file">` uses the `WKUIDelegate` open-panel callback in
 `WebWindow.swift`. The callback maps single, multiple, directory, and cancel
-actions to WebKit's `FileList`.
+actions to WebKit's `FileList`. `FileDropWebView.swift` registers file URLs and
+file promises, accepts Finder drops, and forwards the drop methods to WebKit.
 
-The shared E2E checks the fixture DOM, but it cannot drive the macOS picker.
-Manually verify selection and cancellation with
-`test/fixtures/file_input.html`, including after `webview.rebuild`.
+The shared E2E checks the fixture DOM, but it cannot drive the macOS picker or
+Finder. Manually verify selection, cancellation, multiple files, directory
+selection, and Finder drops with `test/fixtures/file_input.html`, including
+after `webview.rebuild`.
 
 ## Structure
 

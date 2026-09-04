@@ -46,17 +46,21 @@ Release artifact name: `DesktopWebView-linux-x86_64` (see [packaging.md](../../d
 
 Headless CI needs a display (`xvfb-run` or a pre-set `DISPLAY`).
 
-## HTML file inputs
+## HTML file inputs and file-manager drops
 
 WebKitGTK's asynchronous `run-file-chooser` default handler serves
 `<input type="file">`. It handles single files, multiple files, directories,
 and cancellation without using the `dialog.choose_file` RPC.
 
+File-manager drops are also required. Keep WebKitGTK's normal drag handling
+enabled so file URLs reach the page as a `drop` event with
+`dataTransfer.files`. Do not replace the page drop with `dialog.choose_file`.
+
 The shared E2E checks the fixture DOM, but it cannot drive a native picker.
 Manually verify selection and cancellation with
 `test/fixtures/file_input.html`. The chooser uses the GTK desktop portal when
-the desktop session provides one, so the host needs an interactive display for
-manual checks.
+the desktop session provides one. File-manager drop checks also need an
+interactive display.
 
 ## Structure
 

@@ -154,6 +154,24 @@ The shared E2E may inspect the fixture's DOM, but it cannot select files or
 populate a `FileList` through JavaScript. Native picker selection and cancellation
 remain manual checks until a supported platform test hook exists.
 
+### File-manager drag-and-drop
+
+File-manager drag-and-drop is also a required webview feature on macOS, Windows,
+and Linux. A drop from Finder, Explorer, or a Linux file manager onto a page
+must produce the normal web `drop` event. Its `dataTransfer.files` must contain
+the dropped local files.
+
+Hosts MUST:
+
+- accept local file URLs and file promises from the platform file manager;
+- preserve the browser's normal drop handling and `FileList` semantics;
+- support multiple dropped files when the page accepts them; and
+- avoid converting a page drop into `dialog.choose_file` or another RPC.
+
+The webview host may inspect the drag to decide whether to accept it, but it must
+forward accepted drops to the engine. Applications still decide which files to
+accept through their page and upload logic.
+
 ### Menus and tray
 
 - The macOS host installs a default `Edit` submenu on the main menu (Undo, Redo,

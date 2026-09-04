@@ -33,7 +33,7 @@ manual-only with justification).
 | Microphone in webview | done | E2E via test RPC + fixture |
 | Camera in webview | done | E2E via test RPC + fixture |
 | Native dialogs (`dialog.choose_file/dir`) | done | `NSOpenPanel` (manual; blocks RPC) |
-| HTML `<input type=file>` | partial | `WKUIDelegate` open-panel hook; native selection and cancellation checks pending |
+| HTML `<input type=file>` and Finder drag-and-drop | partial | `WKUIDelegate` open-panel hook and `FileDropWebView` forwarding; native picker and Finder checks pending |
 | Dialog prompt | done | `NSAlert` + text field (manual) |
 | EventBridge Env/Window/Menu | done | Elixir unit coverage |
 | Test RPC channel | done | `--edw-test-rpc` |
