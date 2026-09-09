@@ -40,6 +40,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 }
 
 let config = HostConfig.parse(argv: CommandLine.arguments)
+if let code = BeamCli.exclusiveExitCode(config) {
+    exit(code)
+}
+
 let app = NSApplication.shared
 let delegate = AppDelegate()
 app.delegate = delegate

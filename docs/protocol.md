@@ -71,6 +71,10 @@ Notification (no `id`):
    client disconnects (and kills BEAM when the host exits in packaged mode).
    BEAM-first / `--edw-no-beam` (dev) always exits the host on client disconnect.
 
+`--edw-rpc` and `--edw-recover` are process-shell commands, not JSON-RPC.
+They do not listen. See [packaging.md](packaging.md) and
+[specs/feature-edw-rpc.md](specs/feature-edw-rpc.md).
+
 ## Behavioral semantics
 
 These rules are normative for every platform host. If macOS behavior and this

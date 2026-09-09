@@ -20,6 +20,7 @@ add_executable(DesktopWebView
   src/rpc_server.cpp
   src/web_window.cpp
   src/host_controller.cpp
+  src/beam_cli.cpp
 )
 
 target_include_directories(DesktopWebView PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)

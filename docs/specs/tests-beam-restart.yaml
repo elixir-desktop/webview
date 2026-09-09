@@ -1,0 +1,43 @@
+# Input mapping: packaged host (no --edw-no-beam) or one-shot --edw-recover.
+# Implementations MUST cover these in test/e2e/ (tag :e2e).
+
+edw_recover:
+  - name: "runs Mix eval without start or listening"
+    input:
+      flags: ["--edw-recover"]
+      recovery_script: writes_marker.exs
+    output:
+      exit: 0
+      marker_written: true
+      start_invoked: false
+      listening: false
+
+  - name: "fails when recovery_script is missing"
+    input:
+      flags: ["--edw-recover"]
+      recovery_script: null
+    output:
+      exit_nonzero: true
+
+beam_restart:
+  - name: "runs recovery eval after three startup crashes then start succeeds"
+    input:
+      recovery_after: 3
+      recovery_script: writes_marker.exs
+      restart_backoff_ms: 50
+      start_exits_until_marker: true
+    output:
+      start_failures: 3
+      eval_count: 1
+      then_start_stays_up: true
+
+  - name: "stops after three crashes when max attempts is 3 and no recovery script"
+    input:
+      restart_max_attempts: 3
+      recovery_script: null
+      restart_backoff_ms: 50
+      start_always_exits: true
+    output:
+      start_failures: 3
+      eval_count: 0
+      host_exits: true

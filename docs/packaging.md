@@ -99,6 +99,10 @@ app_name = my_app
 args = start
 working_dir = beam
 enabled = true
+# Optional overrides for --edw-rpc (else releases/COOKIE + vm.args)
+# node = my_app@127.0.0.1
+# cookie = secret
+# cookie_file = releases/COOKIE
 
 [network]
 host = 127.0.0.1
@@ -106,11 +110,20 @@ port = 0
 
 [lifetime]
 mode = reconnect
+restart_beam = true
+restart_max_attempts = 0
+restart_backoff_ms = 500
+recovery_after = 3
+# recovery_script = recovery.exs
 
 [env]
 # Extra environment for the BEAM child
 # FOO = bar
 ```
+
+One-shot CLI (`--edw-rpc`, `--edw-recover`) does not listen, print
+`listening`, or spawn `start`. See [feature-edw-rpc.md](specs/feature-edw-rpc.md)
+and [feature-beam-restart.md](specs/feature-beam-restart.md).
 
 ## CLI (`--edw-*`)
 
@@ -127,6 +140,13 @@ argv is forwarded to the BEAM release.
 | `--edw-test-rpc` | Enable `test.*` JSON-RPC methods |
 | `--edw-beam-path=DIR` | Override beam release directory |
 | `--edw-beam-app=NAME` | Override release script name |
+| `--edw-rpc <expr>` | One-shot Elixir eval on the running node via `erl_call` |
+| `--edw-recover` | One-shot Mix `eval` of `recovery_script` (no application start) |
+| `--edw-recovery-script=PATH` | Recovery `.exs` path |
+| `--edw-recovery-after=N` | Startup crashes before automatic recovery (default 3) |
+| `--edw-restart-beam=true\|false` | Respawn BEAM after unexpected exit (default true) |
+| `--edw-max-restart-attempts=N` | Cap consecutive unexpected exits (`0` = no cap) |
+| `--edw-restart-backoff-ms=N` | Initial backoff; doubles, cap 5000 ms |
 
 Forwarded argv example:
 
@@ -147,6 +167,31 @@ DesktopWebView --edw-port=0 -- --foo bar
 - **`--edw-no-beam` (dev):** host exits when the Elixir client disconnects, even
   if lifetime is `reconnect` — the VM owns the host process. Reset session UI
   first.
+
+### Host-driven BEAM restart
+
+Packaged mode (`restart_beam`, default true) respawns the release after an
+unexpected child exit. Consecutive attempt counters reset only on a successful
+`initialize`, not on spawn.
+
+Backoff after unexpected exit *n* (1-based):
+`min(restart_backoff_ms * 2^min(n-1, 4), 5000)`.
+
+If `restart_max_attempts > 0` and consecutive unexpected exits reach that cap,
+the host exits. `0` means no cap.
+
+A **startup crash** is a child exit before `initialize`. After
+`recovery_after` (default 3) consecutive startup crashes, if `recovery_script`
+is set, the host runs Mix release `eval`:
+
+```text
+{beam}/bin/{app} eval "Code.eval_file(\"ABS_PATH\")"
+```
+
+OTP and Elixir load; the application does not start. Then the host respawns
+`start`. `--edw-recover` runs that same `eval` without starting the UI.
+
+`--edw-rpc` and `--edw-recover` are mutually exclusive.
 
 ## Binaries
 

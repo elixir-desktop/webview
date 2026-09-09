@@ -2,6 +2,7 @@
 #include "host_controller.hpp"
 #include "web_window.hpp"
 #include "win_util.hpp"
+#include "beam_cli.hpp"
 
 #include <cstdio>
 #include <memory>
@@ -35,6 +36,11 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
   for (auto& s : args) argv_ptrs.push_back(s.data());
 
   auto config = HostConfig::parse(static_cast<int>(argv_ptrs.size()), argv_ptrs.data());
+  int exclusive = 0;
+  if (beamcli::maybe_run_exclusive(config, &exclusive)) {
+    CoUninitialize();
+    return exclusive;
+  }
   WebWindow::register_class();
 
   auto host = std::make_unique<HostController>(std::move(config));

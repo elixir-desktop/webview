@@ -52,7 +52,6 @@ class HostController {
   void reset_session();
   void spawn_beam();
   void beam_did_exit();
-  bool should_respawn_beam();
   void schedule_beam_respawn();
   void watch_beam_process();
   void clear_beam_watch();
@@ -101,6 +100,7 @@ class HostController {
   bool expected_beam_exit_ = false;
   int id_counter_ = 0;
   int beam_restart_attempts_ = 0;
+  int startup_failures_ = 0;
   UINT next_menu_cmd_ = 1000;
   UINT_PTR respawn_timer_id_ = 0;
   std::map<std::string, std::unique_ptr<WebWindow>> windows_;

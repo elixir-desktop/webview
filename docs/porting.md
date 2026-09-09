@@ -43,6 +43,11 @@ Do **not** copy macOS UI code into other platforms — share only the protocol.
 9. **OS events** — reopen / open URL / open file where the OS supports them
 10. **Packaged BEAM spawn** + **CI artifact** on tag draft releases
 11. **Test RPC** behind `--edw-test-rpc`; run shared E2E
+12. **`--edw-rpc`** — one-shot Elixir via erts `erl_call` (cookie/node from the
+    release). No UI. See [specs/feature-edw-rpc.md](specs/feature-edw-rpc.md).
+13. **BEAM restart + `--edw-recover`** — shared backoff, reset counters on
+    `initialize`, Mix `eval` recovery script. See
+    [specs/feature-beam-restart.md](specs/feature-beam-restart.md).
 
 ## HTML file inputs and file-manager drag-and-drop
 
@@ -115,6 +120,8 @@ Before flipping a status row to `done`, the corresponding E2E (or an added E2E) 
 | Permissions + JS eval | `permission policy and simulate` |
 | HTML file input DOM contract | `HTML file input fixture exposes chooser semantics` |
 | Locale / OS string | `system locale and os_description` |
+| `--edw-rpc` | `test/e2e/rpc_test.exs` |
+| Restart / `--edw-recover` | `test/e2e/restart_test.exs` |
 
 Platform-specific asserts (e.g. `caps["platform"] == "macos"`) must be generalized when the second host lands — use `:os.type()` / host `initialize.platform`.
 

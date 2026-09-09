@@ -26,6 +26,13 @@ struct HostConfig {
   bool restart_beam = true;
   int restart_max_attempts = 0;
   uint32_t restart_backoff_ms = 500;
+  std::optional<std::string> rpc_expr;
+  bool recover = false;
+  std::optional<std::string> recovery_script;
+  int recovery_after = 3;
+  std::optional<std::string> beam_node;
+  std::optional<std::string> beam_cookie;
+  std::optional<std::string> beam_cookie_file;
 
   static HostConfig parse(int argc, char** argv);
 

@@ -1,0 +1,33 @@
+# Input mapping: each case is a host process invocation (no GUI).
+# Implementations MUST cover these in test/e2e/ (tag :e2e).
+
+edw_rpc:
+  - name: "inspects 1+1 as 2"
+    input:
+      expr: "1+1"
+      node: running_test_node
+    output:
+      stdout_inspect: "2"
+      exit: 0
+
+  - name: "evaluates a module on the test node"
+    input:
+      expr: "DesktopWebview.Binary.available?()"
+      node: running_test_node
+    output:
+      stdout_inspect: "true"
+      exit: 0
+
+  - name: "fails when the node name is wrong"
+    input:
+      expr: "1+1"
+      node: "missing_edw_rpc@127.0.0.1"
+    output:
+      exit_nonzero: true
+
+  - name: "rejects --edw-rpc together with --edw-recover"
+    input:
+      flags: ["--edw-rpc", "1+1", "--edw-recover"]
+    output:
+      exit_nonzero: true
+      no_listening: true

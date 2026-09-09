@@ -99,6 +99,25 @@ HostConfig HostConfig::parse(int argc, char** argv) {
         cfg.beam_path = body.substr(10);
       } else if (body.rfind("beam-app=", 0) == 0) {
         cfg.beam_app = body.substr(9);
+      } else if (body.rfind("restart-beam=", 0) == 0) {
+        auto v = body.substr(13);
+        cfg.restart_beam = !(v == "false" || v == "0");
+      } else if (body.rfind("max-restart-attempts=", 0) == 0) {
+        cfg.restart_max_attempts = std::stoi(body.substr(21));
+      } else if (body.rfind("restart-backoff-ms=", 0) == 0) {
+        cfg.restart_backoff_ms = static_cast<uint32_t>(std::stoul(body.substr(19)));
+      } else if (body == "recover") {
+        cfg.recover = true;
+      } else if (body == "rpc") {
+        if (i + 1 < argc) cfg.rpc_expr = argv[++i];
+        else
+          cfg.rpc_expr = "";
+      } else if (body.rfind("rpc=", 0) == 0) {
+        cfg.rpc_expr = body.substr(4);
+      } else if (body.rfind("recovery-script=", 0) == 0) {
+        cfg.recovery_script = body.substr(16);
+      } else if (body.rfind("recovery-after=", 0) == 0) {
+        cfg.recovery_after = std::stoi(body.substr(15));
       } else {
         fprintf(stderr, "unknown --edw flag: %s\n", a.c_str());
       }
@@ -173,6 +192,11 @@ void HostConfig::apply_ini() {
   if (auto v = ini.get("lifetime", "restart_backoff_ms")) {
     restart_backoff_ms = static_cast<uint32_t>(std::stoul(*v));
   }
+  if (auto v = ini.get("lifetime", "recovery_script")) recovery_script = *v;
+  if (auto v = ini.get("lifetime", "recovery_after")) recovery_after = std::stoi(*v);
+  if (auto v = ini.get("beam", "node")) beam_node = *v;
+  if (auto v = ini.get("beam", "cookie")) beam_cookie = *v;
+  if (auto v = ini.get("beam", "cookie_file")) beam_cookie_file = *v;
   for (auto& [k, v] : ini.section("env")) {
     extra_env[k] = v;
   }

@@ -1,4 +1,5 @@
 #include "host_controller.hpp"
+#include "beam_cli.hpp"
 #include "win_util.hpp"
 
 #include <algorithm>
@@ -217,6 +218,7 @@ void HostController::watch_beam_process() {
 }
 
 void HostController::beam_did_exit() {
+  bool was_initialized = initialized_;
   clear_beam_watch();
   if (beam_process_) {
     CloseHandle(beam_process_);
@@ -232,24 +234,27 @@ void HostController::beam_did_exit() {
     expected_beam_exit_ = false;
     return;
   }
-  if (should_respawn_beam()) {
-    schedule_beam_respawn();
+  if (!config_.restart_beam) return;
+  if (!was_initialized) {
+    startup_failures_ += 1;
+    if (config_.recovery_after > 0 && startup_failures_ >= config_.recovery_after &&
+        config_.recovery_script) {
+      fprintf(stderr, "edw: startup crash limit reached; running recovery script\n");
+      beamcli::run_recover(config_);
+      startup_failures_ = 0;
+    }
   }
-}
-
-bool HostController::should_respawn_beam() {
-  if (!config_.restart_beam) return false;
+  beam_restart_attempts_ += 1;
   if (config_.restart_max_attempts > 0 &&
       beam_restart_attempts_ >= config_.restart_max_attempts) {
     fprintf(stderr, "edw: beam exited; restart limit reached, terminating host\n");
     PostQuitMessage(1);
-    return false;
+    return;
   }
-  return true;
+  schedule_beam_respawn();
 }
 
 void HostController::schedule_beam_respawn() {
-  beam_restart_attempts_ += 1;
   int shift = (std::min)(beam_restart_attempts_ - 1, 4);
   uint32_t multiplier = static_cast<uint32_t>(1) << shift;
   uint32_t backoff = (std::min)(config_.restart_backoff_ms * multiplier, 5000u);
@@ -398,7 +403,6 @@ void HostController::spawn_beam() {
   }
   CloseHandle(pi.hThread);
   beam_process_ = pi.hProcess;
-  beam_restart_attempts_ = 0;
   watch_beam_process();
 }
 
@@ -729,6 +733,8 @@ jsonutil::Json HostController::dispatch(const std::string& method, const jsonuti
 
   if (method == "initialize") {
     initialized_ = true;
+    beam_restart_attempts_ = 0;
+    startup_failures_ = 0;
     return jsonutil::Json{
         {"protocol_version", 1},
         {"platform", "windows"},

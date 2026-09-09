@@ -50,8 +50,6 @@ class HostController {
   void spawn_beam();
   // Called from a glib child-watch source whenever BEAM exits.
   void beam_did_exit();
-  // Decide whether to respawn BEAM (mirrors the Swift logic).
-  bool should_respawn_beam();
   // Schedule a delayed respawn via glib main-loop timer.
   void schedule_beam_respawn();
   std::string next_id(const std::string& prefix);
@@ -99,5 +97,6 @@ class HostController {
   bool expected_beam_exit_ = false;
   bool quit_initiated_ = false;
   int beam_restart_attempts_ = 0;
+  int startup_failures_ = 0;
   guint restart_timer_id_ = 0;
 };

@@ -1,5 +1,6 @@
 #include "config.hpp"
 #include "host_controller.hpp"
+#include "beam_cli.hpp"
 
 #include <gtk/gtk.h>
 
@@ -8,6 +9,8 @@
 
 int main(int argc, char** argv) {
   auto config = HostConfig::parse(argc, argv);
+  int exclusive = 0;
+  if (beamcli::maybe_run_exclusive(config, &exclusive)) return exclusive;
 
   // Prefer software rendering when unset — WebKitGPU/DMA-BUF crashes are common on Xvfb.
   if (!g_getenv("WEBKIT_DISABLE_COMPOSITING_MODE"))
