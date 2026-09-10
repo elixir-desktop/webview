@@ -305,6 +305,13 @@ std::string resolve_bin_script(const HostConfig& cfg) {
   return {};
 }
 
+std::string comspec_path() {
+  char buf[MAX_PATH];
+  DWORD n = GetEnvironmentVariableA("COMSPEC", buf, MAX_PATH);
+  if (n == 0 || n >= MAX_PATH) return "cmd.exe";
+  return std::string(buf, n);
+}
+
 }  // namespace
 
 int run_recover(const HostConfig& cfg) {
@@ -320,13 +327,31 @@ int run_recover(const HostConfig& cfg) {
     return 1;
   }
   auto expr = eval_file_expr(*script_path);
-  std::ostringstream cmd;
-  if (is_batch(bin)) {
-    cmd << "cmd.exe /s /c \"" << '"' << bin << "\" eval \"" << expr << '"' << '"';
-  } else {
-    cmd << '"' << bin << "\" eval \"" << expr << '"';
+  char tmp_dir[MAX_PATH];
+  char tmp_file[MAX_PATH];
+  if (!GetTempPathA(MAX_PATH, tmp_dir) || !GetTempFileNameA(tmp_dir, "edw", 0, tmp_file)) {
+    fprintf(stderr, "edw: failed to create recovery cmd file\n");
+    return 1;
   }
-  return spawn_cmd(cmd.str(), resolved_working_dir(cfg), cfg.extra_env, nullptr, true);
+  std::string cmd_path = std::string(tmp_file) + ".cmd";
+  DeleteFileA(tmp_file);
+  {
+    std::ofstream out(cmd_path, std::ios::binary);
+    if (!out) {
+      fprintf(stderr, "edw: failed to write recovery cmd file\n");
+      return 1;
+    }
+    out << "@echo off\r\n";
+    if (is_batch(bin)) {
+      out << "call \"" << bin << "\" eval \"" << expr << "\"\r\n";
+    } else {
+      out << '"' << bin << "\" eval \"" << expr << "\"\r\n";
+    }
+  }
+  std::string cmdline = "\"" + comspec_path() + "\" /c \"" + cmd_path + "\"";
+  int code = spawn_cmd(cmdline, resolved_working_dir(cfg), cfg.extra_env, nullptr, true);
+  DeleteFileA(cmd_path.c_str());
+  return code;
 }
 
 int run_rpc(const HostConfig& cfg, const std::string& expr) {

@@ -45,7 +45,24 @@ defmodule DesktopWebview.BeamFixture do
         raise "epmd not found on PATH"
 
       path ->
-        System.cmd(List.to_string(path), ["-daemon"], stderr_to_stdout: true)
+        start_epmd(List.to_string(path))
+    end
+  end
+
+  defp start_epmd(path) do
+    case :os.type() do
+      {:win32, _} ->
+        # Windows `epmd -daemon` stays attached; do not wait on System.cmd.
+        _port =
+          Port.open(
+            {:spawn_executable, String.to_charlist(path)},
+            [:hide, args: [~c"-daemon"]]
+          )
+
+        Process.sleep(200)
+
+      _ ->
+        System.cmd(path, ["-daemon"], stderr_to_stdout: true)
     end
   end
 
