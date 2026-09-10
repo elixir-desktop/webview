@@ -203,6 +203,7 @@ defmodule DesktopWebview.BeamFixture do
     """
     @echo off
     set ROOT=%~dp0..
+    echo cmd %*>> "%ROOT%\calls.log"
     if /I "%~1"=="eval" (
       echo eval %~2>> "%ROOT%\\eval.log"
       elixir -e "%~2"

@@ -28,7 +28,9 @@ defmodule DesktopWebview.E2E.RestartTest do
         "--edw-config=#{fx.ini}"
       ])
 
-    assert status == 0, out
+    assert status == 0,
+           "status=#{status} out=#{inspect(out)} calls=#{inspect(File.read(Path.join(root, "calls.log")))} eval=#{inspect(File.read(Path.join(root, "eval.log")))}"
+
     refute out =~ "listening "
     assert File.exists?(Path.join(root, "recovered"))
     assert BeamFixture.count_lines(Path.join(root, "starts.log")) == 0
@@ -68,7 +70,7 @@ defmodule DesktopWebview.E2E.RestartTest do
              File.exists?(Path.join(root, "recovered")) and
                BeamFixture.count_lines(Path.join(root, "starts.log")) >= 4
            end),
-           "expected recovery then a successful start; starts=#{inspect(File.read(Path.join(root, "starts.log")))} eval=#{inspect(File.read(Path.join(root, "eval.log")))}"
+           "expected recovery then a successful start; starts=#{inspect(File.read(Path.join(root, "starts.log")))} eval=#{inspect(File.read(Path.join(root, "eval.log")))} calls=#{inspect(File.read(Path.join(root, "calls.log")))}"
 
     assert BeamFixture.count_lines(Path.join(root, "eval.log")) == 1
   end

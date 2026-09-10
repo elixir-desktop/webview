@@ -92,8 +92,8 @@ std::string eval_file_expr(const std::string& script_path) {
   std::string posix = script_path;
   for (char& c : posix)
     if (c == '\\') c = '/';
-  // ~s|...| avoids nested " so cmd.exe /s /c quoting stays intact.
-  return "Code.eval_file(~s|" + posix + "|)";
+  // ~s{...} avoids " and | so cmd.exe does not split or pipe the eval argument.
+  return "Code.eval_file(~s{" + posix + "})";
 }
 
 std::string base64_encode(const std::string& in) {
@@ -305,13 +305,6 @@ std::string resolve_bin_script(const HostConfig& cfg) {
   return {};
 }
 
-std::string comspec_path() {
-  char buf[MAX_PATH];
-  DWORD n = GetEnvironmentVariableA("COMSPEC", buf, MAX_PATH);
-  if (n == 0 || n >= MAX_PATH) return "cmd.exe";
-  return std::string(buf, n);
-}
-
 }  // namespace
 
 int run_recover(const HostConfig& cfg) {
@@ -348,7 +341,9 @@ int run_recover(const HostConfig& cfg) {
       out << '"' << bin << "\" eval \"" << expr << "\"\r\n";
     }
   }
-  std::string cmdline = "\"" + comspec_path() + "\" /c \"" + cmd_path + "\"";
+  // Same shape as packaged start: cmd.exe /c "script" with exactly two quotes.
+  std::string cmdline = "cmd.exe /c \"" + cmd_path + "\"";
+  fprintf(stderr, "edw: recovery eval: %s\n", cmdline.c_str());
   int code = spawn_cmd(cmdline, resolved_working_dir(cfg), cfg.extra_env, nullptr, true);
   DeleteFileA(cmd_path.c_str());
   return code;
