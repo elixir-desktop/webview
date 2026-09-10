@@ -50,12 +50,12 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
     return 1;
   }
 
-  MSG msg;
+  MSG msg{};
   while (GetMessageW(&msg, nullptr, 0, 0) > 0) {
     TranslateMessage(&msg);
     DispatchMessageW(&msg);
   }
 
   CoUninitialize();
-  return 0;
+  return msg.message == WM_QUIT ? static_cast<int>(msg.wParam) : 0;
 }

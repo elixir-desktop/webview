@@ -159,7 +159,9 @@ enum BeamCli {
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: erlCall)
         proc.arguments = args
-        proc.environment = ProcessInfo.processInfo.environment
+        var env = ProcessInfo.processInfo.environment
+        for (k, v) in config.extraEnv { env[k] = v }
+        proc.environment = env
         do {
             let readHandle = try FileHandle(forReadingFrom: tmp)
             proc.standardInput = readHandle

@@ -92,12 +92,8 @@ std::string eval_file_expr(const std::string& script_path) {
   std::string posix = script_path;
   for (char& c : posix)
     if (c == '\\') c = '/';
-  std::string escaped;
-  for (char c : posix) {
-    if (c == '\\' || c == '"') escaped.push_back('\\');
-    escaped.push_back(c);
-  }
-  return "Code.eval_file(\"" + escaped + "\")";
+  // ~s|...| avoids nested " so cmd.exe /s /c quoting stays intact.
+  return "Code.eval_file(~s|" + posix + "|)";
 }
 
 std::string base64_encode(const std::string& in) {
@@ -243,7 +239,8 @@ std::wstring env_block(const std::map<std::string, std::string>& extra) {
 }
 
 int spawn_cmd(const std::string& cmdline, const std::string& wd,
-              const std::map<std::string, std::string>& extra, const std::string* stdin_data) {
+              const std::map<std::string, std::string>& extra, const std::string* stdin_data,
+              bool new_console) {
   SECURITY_ATTRIBUTES sa{};
   sa.nLength = sizeof(sa);
   sa.bInheritHandle = TRUE;
@@ -268,7 +265,8 @@ int spawn_cmd(const std::string& cmdline, const std::string& wd,
   mutable_cmd.push_back(L'\0');
   std::wstring wwd = utf8_to_wide(wd);
   auto env = env_block(extra);
-  DWORD flags = CREATE_UNICODE_ENVIRONMENT | CREATE_NO_WINDOW;
+  DWORD flags = CREATE_UNICODE_ENVIRONMENT;
+  flags |= new_console ? CREATE_NEW_CONSOLE : CREATE_NO_WINDOW;
   if (!CreateProcessW(nullptr, mutable_cmd.data(), nullptr, nullptr, TRUE, flags, env.data(),
                       wwd.empty() ? nullptr : wwd.c_str(), &si, &pi)) {
     fprintf(stderr, "edw: spawn failed (%lu): %s\n", GetLastError(), cmdline.c_str());
@@ -324,11 +322,11 @@ int run_recover(const HostConfig& cfg) {
   auto expr = eval_file_expr(*script_path);
   std::ostringstream cmd;
   if (is_batch(bin)) {
-    cmd << "cmd.exe /c \"" << bin << "\" eval \"" << expr << "\"";
+    cmd << "cmd.exe /s /c \"" << '"' << bin << "\" eval \"" << expr << '"' << '"';
   } else {
     cmd << '"' << bin << "\" eval \"" << expr << '"';
   }
-  return spawn_cmd(cmd.str(), resolved_working_dir(cfg), cfg.extra_env, nullptr);
+  return spawn_cmd(cmd.str(), resolved_working_dir(cfg), cfg.extra_env, nullptr, true);
 }
 
 int run_rpc(const HostConfig& cfg, const std::string& expr) {
@@ -370,7 +368,7 @@ int run_rpc(const HostConfig& cfg, const std::string& expr) {
   else
     cmd << "-name ";
   cmd << '"' << node->name << "\" -e";
-  int code = spawn_cmd(cmd.str(), resolved_working_dir(cfg), cfg.extra_env, &erlang);
+  int code = spawn_cmd(cmd.str(), resolved_working_dir(cfg), cfg.extra_env, &erlang, false);
   if (code == 0) {
     std::ifstream in(out_path);
     std::ostringstream ss;

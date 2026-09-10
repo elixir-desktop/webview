@@ -30,12 +30,40 @@ defmodule DesktopWebview.BeamFixture do
 
   def ensure_distributed!(cookie) when is_atom(cookie) do
     unless Node.alive?() do
+      ensure_epmd!()
       name = :"edw_e2e_#{System.unique_integer([:positive])}@127.0.0.1"
-      {:ok, _} = Node.start(name, :longnames)
+      start_longnames!(name)
     end
 
     Node.set_cookie(cookie)
     Node.self()
+  end
+
+  defp ensure_epmd! do
+    case :os.find_executable(~c"epmd") do
+      false ->
+        raise "epmd not found on PATH"
+
+      path ->
+        System.cmd(List.to_string(path), ["-daemon"], stderr_to_stdout: true)
+    end
+  end
+
+  defp start_longnames!(name, attempts \\ 20) do
+    case Node.start(name, :longnames) do
+      {:ok, _} ->
+        :ok
+
+      {:error, {:already_started, _}} ->
+        :ok
+
+      {:error, _reason} when attempts > 1 ->
+        Process.sleep(50)
+        start_longnames!(name, attempts - 1)
+
+      {:error, reason} ->
+        raise "Node.start(#{inspect(name)}) failed: #{inspect(reason)}"
+    end
   end
 
   def write_rpc_release!(beam_dir, opts) do
@@ -99,8 +127,11 @@ defmodule DesktopWebview.BeamFixture do
 
   def count_lines(path) do
     case File.read(path) do
-      {:ok, body} -> body |> String.split("\n", trim: true) |> length()
-      {:error, _} -> 0
+      {:ok, body} ->
+        body |> String.replace("\r", "") |> String.split("\n", trim: true) |> length()
+
+      {:error, _} ->
+        0
     end
   end
 
