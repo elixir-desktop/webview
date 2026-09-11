@@ -1,0 +1,27 @@
+# Input mapping: each case is a host process invocation.
+# Implementations MUST cover these in test/e2e/ (tag :e2e).
+# Use a unique instance_id per test so leftover hosts do not collide.
+
+single_instance:
+  - name: "second host with URL exits 0 and first gets open_url"
+    input:
+      instances: single
+      second_argv: ["ddrive://invite/x"]
+    output:
+      second_exit: 0
+      first_event: event.system.open_url
+      url: "ddrive://invite/x"
+
+  - name: "empty forwarded argv emits reopen"
+    input:
+      instances: single
+      second_argv: []
+    output:
+      second_exit: 0
+      first_event: event.system.reopen
+
+  - name: "instances=multi keeps both hosts up"
+    input:
+      instances: multi
+    output:
+      both_listening: true

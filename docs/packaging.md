@@ -99,17 +99,15 @@ app_name = my_app
 args = start
 working_dir = beam
 enabled = true
-# Optional overrides for --edw-rpc (else releases/COOKIE + vm.args)
-# node = my_app@127.0.0.1
-# cookie = secret
-# cookie_file = releases/COOKIE
-
 [network]
 host = 127.0.0.1
 port = 0
 
 [lifetime]
 mode = reconnect
+# multi (default) | single — packaged apps set single
+# instances = single
+# instance_id = ddrive
 restart_beam = true
 restart_max_attempts = 0
 restart_backoff_ms = 500
@@ -122,8 +120,10 @@ recovery_after = 3
 ```
 
 One-shot CLI (`--edw-rpc`, `--edw-recover`) does not listen, print
-`listening`, or spawn `start`. See [feature-edw-rpc.md](specs/feature-edw-rpc.md)
-and [feature-beam-restart.md](specs/feature-beam-restart.md).
+`listening`, or spawn `start`. `--edw-rpc` is a control-socket client of a
+running single-instance host. See [feature-edw-rpc.md](specs/feature-edw-rpc.md),
+[feature-single-instance.md](specs/feature-single-instance.md), and
+[feature-beam-restart.md](specs/feature-beam-restart.md).
 
 ## CLI (`--edw-*`)
 
@@ -140,7 +140,9 @@ argv is forwarded to the BEAM release.
 | `--edw-test-rpc` | Enable `test.*` JSON-RPC methods |
 | `--edw-beam-path=DIR` | Override beam release directory |
 | `--edw-beam-app=NAME` | Override release script name |
-| `--edw-rpc <expr>` | One-shot Elixir eval on the running node via `erl_call` |
+| `--edw-instances=multi\|single` | Instance mode (default `multi`) |
+| `--edw-instance-id=NAME` | Control-socket lock name (default: host exe basename) |
+| `--edw-rpc <expr>` | One-shot Elixir eval via control socket `instance.eval` |
 | `--edw-recover` | One-shot Mix `eval` of `recovery_script` (no application start) |
 | `--edw-recovery-script=PATH` | Recovery `.exs` path |
 | `--edw-recovery-after=N` | Startup crashes before automatic recovery (default 3) |
@@ -192,6 +194,16 @@ OTP and Elixir load; the application does not start. Then the host respawns
 `start`. `--edw-recover` runs that same `eval` without starting the UI.
 
 `--edw-rpc` and `--edw-recover` are mutually exclusive.
+
+### Single-instance
+
+Default `instances = multi` so `--edw-no-beam` E2E can run more than one host.
+Packaged apps set `instances = single`. The first host binds the control
+socket. A second launch sends `instance.activate` (not a second EDW TCP
+client) and exits 0. See [feature-single-instance.md](specs/feature-single-instance.md).
+
+When the host spawns BEAM, it sets `RELEASE_DISTRIBUTION=none` if that
+environment key is unset.
 
 ## Binaries
 

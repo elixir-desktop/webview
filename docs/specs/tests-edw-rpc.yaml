@@ -1,27 +1,28 @@
 # Input mapping: each case is a host process invocation (no GUI).
 # Implementations MUST cover these in test/e2e/ (tag :e2e).
+# Start a single-instance host, connect Transport, then oneshot --edw-rpc.
 
 edw_rpc:
   - name: "inspects 1+1 as 2"
     input:
       expr: "1+1"
-      node: running_test_node
+      host: running_single_instance
     output:
       stdout_inspect: "2"
       exit: 0
 
-  - name: "evaluates a module on the test node"
+  - name: "evaluates a module on the connected client"
     input:
       expr: "DesktopWebview.Binary.available?()"
-      node: running_test_node
+      host: running_single_instance
     output:
       stdout_inspect: "true"
       exit: 0
 
-  - name: "fails when the node name is wrong"
+  - name: "fails when no single-instance host is running"
     input:
       expr: "1+1"
-      node: "missing_edw_rpc@127.0.0.1"
+      host: none
     output:
       exit_nonzero: true
 
