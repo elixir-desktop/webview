@@ -5,6 +5,47 @@ defmodule DesktopWebview.BeamFixture do
     "#{prefix}-#{System.unique_integer([:positive])}"
   end
 
+  def start_single_instance_host!(prefix) do
+    ctx = write_instance_ini!(unique_id(prefix))
+
+    {:ok, launcher} =
+      DesktopWebview.Launcher.start(
+        test_rpc: false,
+        lifetime: :reconnect,
+        extra_args: ["--edw-config=#{ctx.ini}", "--edw-instance-id=#{ctx.instance_id}"]
+      )
+
+    attach_transport!(launcher.listen_port)
+
+    ExUnit.Callbacks.on_exit(fn ->
+      stop_host(launcher)
+      File.rm_rf(ctx.dir)
+    end)
+
+    {launcher, %{id: ctx.instance_id, ini: ctx.ini, dir: ctx.dir}}
+  end
+
+  def attach_transport!(listen_port) do
+    if pid = Process.whereis(DesktopWebview.Transport) do
+      Process.unlink(pid)
+      GenServer.stop(pid, :normal, 1000)
+    end
+
+    {:ok, pid} = DesktopWebview.Transport.start_link([])
+    Process.unlink(pid)
+    assert_connect!(listen_port)
+  end
+
+  def stop_host(launcher) do
+    DesktopWebview.Launcher.stop(launcher)
+  rescue
+    _ -> :ok
+  end
+
+  defp assert_connect!(listen_port) do
+    {:ok, _caps} = DesktopWebview.Transport.connect("127.0.0.1", listen_port)
+  end
+
   def write_instance_ini!(instance_id, instances \\ "single") do
     dir = tmp_dir("edw-inst-#{instance_id}")
     ini = Path.join(dir, "edw.ini")

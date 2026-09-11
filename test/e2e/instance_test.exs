@@ -14,7 +14,7 @@ defmodule DesktopWebview.E2E.InstanceTest do
   end
 
   test "second host with URL exits 0 and first gets open_url" do
-    {launcher, ctx} = start_single_host!()
+    {launcher, ctx} = BeamFixture.start_single_instance_host!("si")
     Transport.subscribe(self())
 
     {out, status} =
@@ -28,11 +28,11 @@ defmodule DesktopWebview.E2E.InstanceTest do
     assert status == 0, out
     refute out =~ "listening "
     assert_receive {:edw_event, "event.system.open_url", %{"url" => "ddrive://invite/x"}}, 5_000
-    stop_host(launcher)
+    BeamFixture.stop_host(launcher)
   end
 
   test "empty forwarded argv emits reopen" do
-    {launcher, ctx} = start_single_host!()
+    {launcher, ctx} = BeamFixture.start_single_instance_host!("si")
     Transport.subscribe(self())
 
     {out, status} =
@@ -45,7 +45,7 @@ defmodule DesktopWebview.E2E.InstanceTest do
     assert status == 0, out
     refute out =~ "listening "
     assert_receive {:edw_event, "event.system.reopen", _params}, 5_000
-    stop_host(launcher)
+    BeamFixture.stop_host(launcher)
   end
 
   test "instances=multi keeps both hosts up" do
@@ -67,42 +67,14 @@ defmodule DesktopWebview.E2E.InstanceTest do
       )
 
     on_exit(fn ->
-      stop_host(first)
-      stop_host(second)
+      BeamFixture.stop_host(first)
+      BeamFixture.stop_host(second)
     end)
 
     assert first.listen_port != second.listen_port
     assert is_integer(first.listen_port)
     assert is_integer(second.listen_port)
-    stop_host(first)
-    stop_host(second)
-  end
-
-  defp start_single_host! do
-    ctx = BeamFixture.write_instance_ini!(BeamFixture.unique_id("si"))
-
-    {:ok, launcher} =
-      Launcher.start(
-        test_rpc: false,
-        lifetime: :reconnect,
-        extra_args: ["--edw-config=#{ctx.ini}", "--edw-instance-id=#{ctx.instance_id}"]
-      )
-
-    if pid = Process.whereis(Transport), do: GenServer.stop(pid, :normal, 1000)
-    {:ok, _} = Transport.start_link([])
-    assert {:ok, _caps} = Transport.connect("127.0.0.1", launcher.listen_port)
-
-    on_exit(fn ->
-      stop_host(launcher)
-      File.rm_rf(ctx.dir)
-    end)
-
-    {launcher, %{id: ctx.instance_id, ini: ctx.ini, dir: ctx.dir}}
-  end
-
-  defp stop_host(launcher) do
-    Launcher.stop(launcher)
-  rescue
-    _ -> :ok
+    BeamFixture.stop_host(first)
+    BeamFixture.stop_host(second)
   end
 end
