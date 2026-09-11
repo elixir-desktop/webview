@@ -296,8 +296,9 @@ final class InstanceLock {
     private static func readAll(_ fd: Int32, _ buf: inout [UInt8]) -> Bool {
         var offset = 0
         while offset < buf.count {
+            let remaining = buf.count - offset
             let n = buf.withUnsafeMutableBytes { raw in
-                read(fd, raw.baseAddress!.advanced(by: offset), buf.count - offset)
+                read(fd, raw.baseAddress!.advanced(by: offset), remaining)
             }
             if n < 0 {
                 if errno == EINTR { continue }
