@@ -49,8 +49,10 @@ defmodule DesktopWebview.Launcher do
 
       case await_listening(port, Keyword.get(opts, :timeout, 10_000)) do
         {:ok, listen_port} ->
-          # Keep draining host stdout/stderr so WebKit logs cannot fill the pipe.
-          drain_pid = spawn_link(fn -> drain_port(port) end)
+          # Drain without linking to the caller. A link would kill this process
+          # when the test exits, and a later on_exit Process.exit/2 could hit a
+          # reused pid (the next ExUnit test).
+          drain_pid = spawn(fn -> drain_port(port) end)
           true = Port.connect(port, drain_pid)
 
           {:ok,
@@ -79,8 +81,9 @@ defmodule DesktopWebview.Launcher do
 
   def stop(%{port: port} = launcher) when is_port(port) do
     if pid = Map.get(launcher, :drain_pid) do
-      Process.unlink(pid)
-      Process.exit(pid, :kill)
+      if drain_owns_port?(port, pid) do
+        Process.exit(pid, :kill)
+      end
     end
 
     close_port(port)
@@ -88,6 +91,16 @@ defmodule DesktopWebview.Launcher do
   end
 
   def stop(_), do: :ok
+
+  defp drain_owns_port?(port, pid) do
+    Process.alive?(pid) and pid != self() and
+      case Port.info(port, :connected) do
+        {:connected, ^pid} -> true
+        _ -> false
+      end
+  rescue
+    ArgumentError -> false
+  end
 
   defp close_port(port) do
     case Port.info(port) do
