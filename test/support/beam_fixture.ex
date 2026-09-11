@@ -1,6 +1,23 @@
 defmodule DesktopWebview.BeamFixture do
   @moduledoc false
 
+  def unique_id(prefix) do
+    "#{prefix}-#{System.unique_integer([:positive])}"
+  end
+
+  def write_instance_ini!(instance_id, instances \\ "single") do
+    dir = tmp_dir("edw-inst-#{instance_id}")
+    ini = Path.join(dir, "edw.ini")
+
+    File.write!(ini, """
+    [lifetime]
+    instances = #{instances}
+    instance_id = #{instance_id}
+    """)
+
+    %{dir: dir, ini: ini, instance_id: instance_id}
+  end
+
   def tmp_dir(prefix) do
     dir =
       Path.join(

@@ -1,4 +1,5 @@
 #include "beam_cli.hpp"
+#include "instance_lock.hpp"
 #include "win_util.hpp"
 
 #include <algorithm>
@@ -350,63 +351,19 @@ int run_recover(const HostConfig& cfg) {
 }
 
 int run_rpc(const HostConfig& cfg, const std::string& expr) {
-  auto beam_dir = resolved_beam_dir(cfg);
-  auto erl = find_erl_call(beam_dir);
-  if (!erl) {
-    fprintf(stderr, "edw: erl_call not found under %s or PATH\n", beam_dir.c_str());
+  if (cfg.instances != Instances::Single) {
+    fprintf(stderr, "edw: --edw-rpc requires a running single-instance host\n");
     return 1;
   }
-  auto cookie = find_cookie(cfg, beam_dir);
-  if (!cookie) {
-    fprintf(stderr, "edw: cookie not found (ini cookie/cookie_file, releases/COOKIE, or vm.args)\n");
-    return 1;
-  }
-  auto node = find_node(cfg, beam_dir);
-  if (!node) {
-    fprintf(stderr, "edw: node not found (ini [beam] node or vm.args -name/-sname)\n");
-    return 1;
-  }
-  auto b64 = base64_encode(expr);
-  char tmp_dir[MAX_PATH];
-  char out_path[MAX_PATH];
-  if (!GetTempPathA(MAX_PATH, tmp_dir) ||
-      !GetTempFileNameA(tmp_dir, "edw", 0, out_path)) {
-    fprintf(stderr, "edw: failed to create rpc output file\n");
-    return 1;
-  }
-  std::string out_posix = out_path;
-  for (char& c : out_posix)
-    if (c == '\\') c = '/';
-  std::string erlang = "Bin = base64:decode(<<\"" + b64 +
-                       "\">>),\n{Val, _} = 'Elixir.Code':eval_string(Bin),\n"
-                       "Inspect = 'Elixir.Kernel':inspect(Val),\n"
-                       "ok = file:write_file(<<\"" + out_posix + "\">>, Inspect).\n";
-  std::ostringstream cmd;
-  cmd << '"' << *erl << "\" -c \"" << *cookie << "\" -r -no_result_term ";
-  if (node->short_name)
-    cmd << "-sname ";
-  else
-    cmd << "-name ";
-  cmd << '"' << node->name << "\" -e";
-  int code = spawn_cmd(cmd.str(), resolved_working_dir(cfg), cfg.extra_env, &erlang, false);
-  if (code == 0) {
-    std::ifstream in(out_path);
-    std::ostringstream ss;
-    ss << in.rdbuf();
-    std::string text = ss.str();
-    if (text.empty()) {
-      fprintf(stderr, "edw: erl_call succeeded but wrote no result file\n");
-      DeleteFileA(out_path);
-      return 1;
-    }
-    if (text.back() != '\n') text.push_back('\n');
-    fwrite(text.data(), 1, text.size(), stdout);
-    fflush(stdout);
-    fwrite(text.data(), 1, text.size(), stderr);
-    fflush(stderr);
-  }
-  DeleteFileA(out_path);
-  return code;
+  std::string inspect;
+  int code = InstanceLock::client_eval(cfg.resolved_instance_id(), expr, &inspect);
+  if (code != 0) return code;
+  if (inspect.empty() || inspect.back() != '\n') inspect.push_back('\n');
+  fwrite(inspect.data(), 1, inspect.size(), stdout);
+  fflush(stdout);
+  fwrite(inspect.data(), 1, inspect.size(), stderr);
+  fflush(stderr);
+  return 0;
 }
 
 bool maybe_run_exclusive(const HostConfig& cfg, int* exit_code) {

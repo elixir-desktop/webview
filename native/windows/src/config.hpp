@@ -7,6 +7,7 @@
 #include <vector>
 
 enum class Lifetime { Reconnect, Coupled };
+enum class Instances { Multi, Single };
 
 struct HostConfig {
   bool no_beam = false;
@@ -33,11 +34,15 @@ struct HostConfig {
   std::optional<std::string> beam_cookie_file;
   std::map<std::string, std::string> extra_env;
   std::vector<std::string> forwarded_argv;
+  Instances instances = Instances::Multi;
+  std::optional<std::string> instance_id;
 
   static HostConfig parse(int argc, char** argv);
 
   std::string resources_root() const;
   std::optional<std::string> resolve_ini_path() const;
+  std::string resolved_instance_id() const;
+  std::string exe_basename() const;
 
  private:
   void apply_ini();

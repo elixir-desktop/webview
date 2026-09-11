@@ -134,6 +134,11 @@ HostConfig HostConfig::parse(int argc, char** argv) {
         cfg.recovery_script = body.substr(16);
       } else if (body.rfind("recovery-after=", 0) == 0) {
         cfg.recovery_after = std::stoi(body.substr(15));
+      } else if (body.rfind("instances=", 0) == 0) {
+        auto v = body.substr(10);
+        cfg.instances = (v == "single") ? Instances::Single : Instances::Multi;
+      } else if (body.rfind("instance-id=", 0) == 0) {
+        cfg.instance_id = body.substr(12);
       } else {
         fprintf(stderr, "unknown --edw flag: %s\n", a.c_str());
       }
@@ -163,6 +168,23 @@ std::optional<std::string> HostConfig::resolve_ini_path() const {
   return std::nullopt;
 }
 
+std::string HostConfig::exe_basename() const {
+  char buf[4096];
+  ssize_t n = readlink("/proc/self/exe", buf, sizeof(buf) - 1);
+  if (n > 0) {
+    buf[n] = '\0';
+    std::string p = buf;
+    auto pos = p.find_last_of('/');
+    return pos == std::string::npos ? p : p.substr(pos + 1);
+  }
+  return "DesktopWebView";
+}
+
+std::string HostConfig::resolved_instance_id() const {
+  if (instance_id && !instance_id->empty()) return *instance_id;
+  return exe_basename();
+}
+
 void HostConfig::apply_ini() {
   auto path = resolve_ini_path();
   if (!path) return;
@@ -187,6 +209,10 @@ void HostConfig::apply_ini() {
   }
   if (auto v = ini.get("lifetime", "recovery_script")) recovery_script = *v;
   if (auto v = ini.get("lifetime", "recovery_after")) recovery_after = std::stoi(*v);
+  if (auto v = ini.get("lifetime", "instances")) {
+    instances = (*v == "single") ? Instances::Single : Instances::Multi;
+  }
+  if (auto v = ini.get("lifetime", "instance_id")) instance_id = *v;
   if (auto v = ini.get("beam", "enabled")) {
     beam_enabled = !(*v == "false" || *v == "0");
   }

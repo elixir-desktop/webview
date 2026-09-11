@@ -17,6 +17,8 @@ final class RPCServer {
 
     private(set) var port: UInt16 = 0
 
+    var hasClient: Bool { connection != nil }
+
     func start(host: String, port: UInt16) throws {
         let params = NWParameters.tcp
         params.allowLocalEndpointReuse = true
@@ -127,6 +129,10 @@ final class RPCServer {
     }
 
     func request(method: String, params: JSONValue?, completion: @escaping (JSONValue?) -> Void) {
+        guard connection != nil else {
+            completion(nil)
+            return
+        }
         let idNum = nextOutboundId
         nextOutboundId += 1
         let id = JSONValue.number(Double(idNum))

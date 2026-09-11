@@ -33,6 +33,7 @@ class RpcServer {
   void notify(const std::string& method, jsonutil::Json params);
   void request(const std::string& method, jsonutil::Json params, PendingCallback cb);
   void close_connection();
+  bool has_client() const { return client_sock_ != INVALID_SOCKET; }
 
   static constexpr UINT WM_EDW_SOCKET = WM_APP + 1;
 

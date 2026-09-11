@@ -32,6 +32,7 @@ class RpcServer {
   void notify(const std::string& method, JsonNode* params);  // takes ownership of params
   void request(const std::string& method, JsonNode* params, PendingCallback cb);  // takes params
   void close_connection();
+  bool has_client() const { return connection_ != nullptr; }
 
  private:
   void accept(GSocketConnection* conn);
