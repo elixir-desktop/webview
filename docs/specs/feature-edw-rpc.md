@@ -129,10 +129,10 @@ Packaging CLI table. Porting checklist row for `--edw-rpc`. Protocol
 
 ## Implementation Checklist
 
-- [ ] macOS / Windows / Linux one-shot CLI via `instance.eval`
-- [ ] Mutual exclusion with `--edw-recover`
-- [ ] E2E cases from tests-edw-rpc.yaml
-- [ ] Status row `done` only when E2E is green
+- [x] macOS / Windows / Linux one-shot CLI via `instance.eval`
+- [x] Mutual exclusion with `--edw-recover`
+- [x] E2E cases from tests-edw-rpc.yaml
+- [x] Status row `done` only when E2E is green
 
 ## Version History
 

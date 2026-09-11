@@ -35,8 +35,8 @@ Release asset: `DesktopWebView-windows-x64.exe` (GitHub Releases; not Hex `priv/
 | Native dialogs (`dialog.choose_file/dir`) | done | IFileOpenDialog + Win32 prompt |
 | HTML `<input type=file>` and Explorer drag-and-drop | partial | WebView2 built-in picker and drag handling; native picker and Explorer checks pending |
 | Host-driven BEAM restart + backoff | done | Reset counters on `initialize`; shared E2E |
-| `--edw-rpc` (control socket) | todo | One-shot `instance.eval` → `rpc.eval`; [feature-edw-rpc.md](../specs/feature-edw-rpc.md) |
-| Single-instance lock + activate | todo | [feature-single-instance.md](../specs/feature-single-instance.md) |
+| `--edw-rpc` (control socket) | done | One-shot `instance.eval` → `rpc.eval`; [feature-edw-rpc.md](../specs/feature-edw-rpc.md) |
+| Single-instance lock + activate | done | [feature-single-instance.md](../specs/feature-single-instance.md) |
 | Startup recovery script and `--edw-recover` | done | Mix `eval`; [feature-beam-restart.md](../specs/feature-beam-restart.md) |
 | Test RPC channel | done | E2E |
 | Release artifact download | todo | Elixir fetch/cache still pending |

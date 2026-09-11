@@ -149,11 +149,11 @@ row, AGENTS.md hard rule, status rows.
 
 ## Implementation Checklist
 
-- [ ] macOS / Windows / Linux control socket
-- [ ] Activate argv classification + raise windows
-- [ ] `RELEASE_DISTRIBUTION=none` when unset
-- [ ] E2E cases from tests-single-instance.yaml
-- [ ] Status row `done` only when E2E is green
+- [x] macOS / Windows / Linux control socket
+- [x] Activate argv classification + raise windows
+- [x] `RELEASE_DISTRIBUTION=none` when unset
+- [x] E2E cases from tests-single-instance.yaml
+- [x] Status row `done` only when E2E is green
 
 ## Version History
 
