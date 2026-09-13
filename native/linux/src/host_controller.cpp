@@ -205,6 +205,14 @@ void HostController::spawn_beam() {
   env_store.push_back("EDW_PORT=" + std::to_string(server_.port()));
   env_store.push_back("EDW_HOST=" + config_.host);
   for (auto& [k, v] : config_.extra_env) env_store.push_back(k + "=" + v);
+  bool has_rel_dist = false;
+  for (auto& e : env_store) {
+    if (e.rfind("RELEASE_DISTRIBUTION=", 0) == 0) {
+      has_rel_dist = true;
+      break;
+    }
+  }
+  if (!has_rel_dist) env_store.push_back("RELEASE_DISTRIBUTION=none");
   std::vector<char*> envp;
   for (auto& s : env_store) envp.push_back(s.data());
   envp.push_back(nullptr);
@@ -277,6 +285,77 @@ void HostController::schedule_beam_respawn() {
         return G_SOURCE_REMOVE;
       },
       this);
+}
+
+namespace {
+
+bool looks_like_scheme(const std::string& s) {
+  auto colon = s.find(':');
+  if (colon == std::string::npos || colon == 0) return false;
+  if (colon == 1 && s.size() >= 3 && (s[2] == '\\' || s[2] == '/')) return false;
+  for (size_t i = 0; i < colon; i++) {
+    unsigned char c = static_cast<unsigned char>(s[i]);
+    bool ok = (i == 0) ? std::isalpha(c) : (std::isalnum(c) || c == '+' || c == '.' || c == '-');
+    if (!ok) return false;
+  }
+  return true;
+}
+
+void notify_object(RpcServer& server, const std::string& method, JsonObject* o) {
+  JsonNode* n = json_node_alloc();
+  json_node_init_object(n, o);
+  json_object_unref(o);
+  server.notify(method, n);
+}
+
+}  // namespace
+
+void HostController::activate_from_argv(const std::vector<std::string>& argv) {
+  if (argv.empty()) {
+    JsonObject* o = jsonutil::object_new();
+    notify_object(server_, "event.system.reopen", o);
+  } else {
+    for (const auto& a : argv) {
+      if (looks_like_scheme(a)) {
+        JsonObject* o = jsonutil::object_new();
+        json_object_set_string_member(o, "url", a.c_str());
+        notify_object(server_, "event.system.open_url", o);
+      } else if (g_file_test(a.c_str(), G_FILE_TEST_EXISTS)) {
+        JsonObject* o = jsonutil::object_new();
+        json_object_set_string_member(o, "path", a.c_str());
+        notify_object(server_, "event.system.open_file", o);
+      } else {
+        JsonObject* o = jsonutil::object_new();
+        json_object_set_string_member(o, "url", a.c_str());
+        notify_object(server_, "event.system.open_url", o);
+      }
+    }
+  }
+  for (auto& [_, w] : windows_) {
+    w->show();
+    w->raise();
+  }
+}
+
+void HostController::eval_rpc(const std::string& expr,
+                             std::function<void(bool, std::string)> done) {
+  if (!initialized_ || !server_.has_client()) {
+    done(false, "no initialized Elixir client");
+    return;
+  }
+  JsonObject* o = jsonutil::object_new();
+  json_object_set_string_member(o, "expr", expr.c_str());
+  JsonNode* n = json_node_alloc();
+  json_node_init_object(n, o);
+  json_object_unref(o);
+  server_.request("rpc.eval", n, [done](JsonNode* result) {
+    JsonObject* obj = jsonutil::as_object(result);
+    if (auto inspect = jsonutil::object_get_string(obj, "inspect")) {
+      done(true, *inspect);
+      return;
+    }
+    done(false, "rpc.eval failed");
+  });
 }
 
 void HostController::handle_request(JsonNode* id, const std::string& method, JsonNode* params,

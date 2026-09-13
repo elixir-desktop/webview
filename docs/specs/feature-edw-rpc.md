@@ -1,4 +1,4 @@
-# `--edw-rpc` Specification v0.1.0
+# `--edw-rpc` Specification v0.2.0
 
 > **Spec type:** Feature
 > **Path:** `docs/specs/feature-edw-rpc.md`
@@ -6,34 +6,41 @@
 ## Overview
 
 The native `DesktopWebView` binary exposes a one-shot `--edw-rpc <expr>` CLI.
-It evaluates an Elixir expression on a **running** packaged BEAM node through
-erts `erl_call`, prints the inspected return value, and exits.
+It connects to the **control socket** of a running single-instance host, asks
+that host to evaluate an Elixir expression on the existing EDW session
+(`rpc.eval`), prints the inspected return value, and exits.
+
+This path does **not** use `erl_call`, a distribution cookie, or `epmd`.
 
 **Integration context:** Host process shell in `native/{macos,windows,linux}/`.
-Config discovery follows [docs/packaging.md](../packaging.md). This is not
-JSON-RPC (`docs/protocol.md`).
+Config discovery follows [docs/packaging.md](../packaging.md). The control
+socket is specified in [feature-single-instance.md](feature-single-instance.md).
+The host→client method is specified in [docs/protocol.md](../protocol.md).
 
 ## Design Principles
 
 1. **One-shot, no UI.** `--edw-rpc` does not listen, print `listening`, spawn
-   `start`, or create a window.
-2. **Elixir in, inspect out.** The public expression is Elixir. The host wraps
-   it for `erl_call`. Stdout is `Kernel.inspect/1` of the value plus a newline.
-3. **Release files supply cookie and node.** Ini may override. The host does
-   not invent a cookie.
-4. **Do not start BEAM.** If the node is down, exit non-zero.
-5. **Same contract on every OS.** macOS, Windows, and Linux use the same flags,
-   discovery order, and exit codes.
-6. **Mutually exclusive with `--edw-recover`.**
+   `start`, create a window, or bind the control socket as a server.
+2. **Elixir in, inspect out.** The public expression is Elixir. Stdout is
+   `Kernel.inspect/1` of the value plus a newline.
+3. **Ask the running host.** The CLI is a control-socket client
+   (`instance.eval`). The host forwards `rpc.eval` to the initialized Elixir
+   client.
+4. **Single-instance only.** If `instances = multi`, or no host holds the
+   lock, exit non-zero.
+5. **Same contract on every OS.** macOS, Windows, and Linux use the same
+   flags, discovery order, and exit codes.
+6. **Mutually exclusive with `--edw-recover`.** `--edw-recover` stays Mix
+   `eval` and does not use the control socket.
 
 ---
 
 ## Output Structure
 
-**Do generate:** native CLI handling, packaging docs, Elixir E2E.
+**Do generate:** native CLI client, packaging docs, Elixir E2E.
 
-**Do not generate:** JSON-RPC methods, native unit-test frameworks, a second
-RPC protocol.
+**Do not generate:** `erl_call` cookie/node discovery, a second Elixir TCP
+client, native unit-test frameworks.
 
 ---
 
@@ -41,17 +48,15 @@ RPC protocol.
 
 | Spec type | Meaning | Examples |
 |-----------|---------|----------|
-| `elixir_expr` | UTF-8 Elixir source | `1+1`, `node()` |
-| `node_name` | Erlang node | `my_app@127.0.0.1`, short `my_app` |
-| `cookie` | Distribution cookie string | contents of `releases/COOKIE` |
+| `elixir_expr` | UTF-8 Elixir source | `1+1`, `DesktopWebview.Binary.available?()` |
+| `instance_id` | Control-socket lock name | `edw-rpc-42` |
 | `exit_code` | Process status | `0` success, non-zero failure |
 
 ### Normalization
 
 - `--edw-rpc <expr>` (next argv) and `--edw-rpc=<expr>` are the same.
-- Relative `beam.path` resolves from the resources / executable directory as
-  in packaging.md.
-- A node name with `@` from `-name` is a long name. `-sname` is a short name.
+- The client uses the same ini-over-CLI merge as other overlapping keys
+  (`--edw-config`, `--edw-instances`, `--edw-instance-id`).
 
 ---
 
@@ -65,34 +70,10 @@ RPC protocol.
 |-----------|------|--------|
 | `--edw-rpc` and `--edw-recover` together | non-zero | mutually exclusive |
 | Missing expression | non-zero | usage |
-| `erl_call` not found | non-zero | path search failed |
-| Cookie or node not found | non-zero | discovery failed |
-| Node down / `erl_call` fails / eval error | `erl_call` status | `erl_call` stderr |
-
----
-
-## Discovery
-
-Search order is the same on every OS.
-
-**Cookie**
-
-1. Ini `[beam] cookie`
-2. Ini `[beam] cookie_file` (file contents, trim newline)
-3. `{beam}/releases/COOKIE`
-4. `-setcookie` in `vm.args`
-
-**Node**
-
-1. Ini `[beam] node`
-2. `-name` or `-sname` in `{beam}/releases/<vsn>/vm.args` (`start_erl.data` or
-   first `releases/*/vm.args`)
-
-**`erl_call` binary** (`.exe` on Windows)
-
-1. `{beam}/erts-*/bin/erl_call`
-2. `{beam}/lib/erl_interface-*/bin/erl_call`
-3. `PATH`
+| `instances = multi` | non-zero | no running single-instance host |
+| No host / connect failed | non-zero | no running single-instance host |
+| No initialized Elixir client | non-zero | control `instance.eval` error |
+| Eval error | non-zero | JSON-RPC `-32000` message |
 
 ---
 
@@ -100,7 +81,7 @@ Search order is the same on every OS.
 
 ### `--edw-rpc <expr>` → stdout + exit_code
 
-Evaluate `expr` on the running node.
+Evaluate `expr` on the Elixir client of the running single-instance host.
 
 **Arguments:**
 
@@ -110,34 +91,28 @@ Evaluate `expr` on the running node.
 
 | Condition | Output |
 |-----------|--------|
-| Success | `inspect(value)` and a newline on stdout and stderr, exit 0 |
-| Node down | non-zero |
+| Success | `inspect(value)` and a newline on stdout (and stderr), exit 0 |
+| No host / multi / not initialized | non-zero |
 | Combined with `--edw-recover` | non-zero, no eval |
 
-**Eval method:** Base64-encode `expr`. Pipe Erlang to `erl_call -c <cookie>`
-with `-name <node>` (long) or `-sname <node>` (short). Pass `-r` and
-`-no_result_term`. Do **not** pass `-s` (that starts a node). The host writes
-`Kernel.inspect/1` of the value to stdout (a temp file is allowed; `io:format`
-does not reach a pipe).
+**Eval method:** Connect to the control socket. Send JSON-RPC
+`instance.eval` `{expr}`. The host sends EDW request `rpc.eval` to the
+Elixir client. `DesktopWebview.Transport` runs `Code.eval_string/1` and
+returns `{inspect}`.
 
-```erlang
-Bin = base64:decode(<<"...">>),
-{Val, _} = 'Elixir.Code':eval_string(Bin),
-io:format("~ts~n", ['Elixir.Kernel':inspect(Val)]).
-```
-
-Do not `halt` the remote node.
+Do not `halt` the remote VM.
 
 **Examples:**
 
 - `--edw-rpc '1+1'` → stdout `2`
-- `--edw-rpc 'node()'` → the remote node name
+- `--edw-rpc 'DesktopWebview.Binary.available?()'` → `true` when that
+  module is loaded in the connected client
 
 **Edge cases:**
 
 - Empty expression → error
-- Quotes and newlines in `expr` → Base64 wrap, no shell interpolation of the
-  remote source
+- Quotes and newlines in `expr` → JSON string, no shell interpolation of
+  the remote source
 
 ---
 
@@ -149,17 +124,17 @@ source of truth.
 
 ## Generated Documentation
 
-Packaging CLI table and ini `[beam] node` / `cookie` keys. Porting checklist
-row for `--edw-rpc`.
+Packaging CLI table. Porting checklist row for `--edw-rpc`. Protocol
+`rpc.eval`.
 
 ## Implementation Checklist
 
-- [ ] macOS / Windows / Linux one-shot CLI
-- [ ] Discovery order implemented
-- [ ] Mutual exclusion with `--edw-recover`
-- [ ] E2E cases from tests-edw-rpc.yaml
-- [ ] Status row `done` only when E2E is green
+- [x] macOS / Windows / Linux one-shot CLI via `instance.eval`
+- [x] Mutual exclusion with `--edw-recover`
+- [x] E2E cases from tests-edw-rpc.yaml
+- [x] Status row `done` only when E2E is green
 
 ## Version History
 
-- **v0.1.0** - Initial specification
+- **v0.2.0** - Control socket + `rpc.eval`; drop `erl_call`
+- **v0.1.0** - Initial specification (`erl_call`)

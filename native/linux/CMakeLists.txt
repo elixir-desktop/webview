@@ -21,9 +21,11 @@ add_executable(DesktopWebView
   src/web_window.cpp
   src/host_controller.cpp
   src/beam_cli.cpp
+  src/instance_lock.cpp
 )
 
+find_package(Threads REQUIRED)
 target_include_directories(DesktopWebView PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_link_libraries(DesktopWebView PRIVATE PkgConfig::DEPS)
+target_link_libraries(DesktopWebView PRIVATE PkgConfig::DEPS Threads::Threads)
 
 install(TARGETS DesktopWebView RUNTIME DESTINATION bin)

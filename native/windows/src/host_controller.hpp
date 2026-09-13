@@ -6,9 +6,11 @@
 #include "web_window.hpp"
 
 #include <atomic>
+#include <functional>
 #include <map>
 #include <memory>
 #include <string>
+#include <vector>
 
 struct HostError {
   int code;
@@ -39,6 +41,8 @@ class HostController {
   bool start();
   RpcServer& server() { return server_; }
   HWND hwnd() const { return hwnd_; }
+  void activate_from_argv(const std::vector<std::string>& argv);
+  void eval_rpc(const std::string& expr, std::function<void(bool ok, std::string inspect_or_err)> done);
 
   static LRESULT CALLBACK HostWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
   static constexpr UINT WM_EDW_REQUEST = WM_APP + 10;
@@ -46,6 +50,8 @@ class HostController {
   static constexpr UINT WM_EDW_TRAY = WM_APP + 12;
   static constexpr UINT WM_EDW_BEAM_EXIT = WM_APP + 13;
   static constexpr UINT WM_EDW_RESPAWN = WM_APP + 14;
+  static constexpr UINT WM_EDW_INSTANCE_ACTIVATE = WM_APP + 15;
+  static constexpr UINT WM_EDW_INSTANCE_EVAL = WM_APP + 16;
 
  private:
   void client_disconnected();

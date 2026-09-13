@@ -71,9 +71,12 @@ Notification (no `id`):
    client disconnects (and kills BEAM when the host exits in packaged mode).
    BEAM-first / `--edw-no-beam` (dev) always exits the host on client disconnect.
 
-`--edw-rpc` and `--edw-recover` are process-shell commands, not JSON-RPC.
-They do not listen. See [packaging.md](packaging.md) and
-[specs/feature-edw-rpc.md](specs/feature-edw-rpc.md).
+`--edw-rpc` and `--edw-recover` are process-shell commands. They do not
+listen and they do not connect to this EDW TCP socket. `--edw-rpc` uses the
+**control socket** (`instance.eval`) of a single-instance host; the host then
+sends `rpc.eval` on this session. `--edw-recover` stays Mix `eval`. See
+[packaging.md](packaging.md), [specs/feature-edw-rpc.md](specs/feature-edw-rpc.md),
+and [specs/feature-single-instance.md](specs/feature-single-instance.md).
 
 ## Behavioral semantics
 
@@ -230,6 +233,9 @@ MAY replace the previous one; document if you support multiple clients. Replace
 MUST reset session UI (see `initialize` and reconnect) and MUST NOT treat the
 replaced socket as a host-quit signal.
 
+Second app launch and `--edw-rpc` MUST NOT connect to this socket. They use the
+control socket in [feature-single-instance.md](specs/feature-single-instance.md).
+
 ## Production methods
 
 ### `initialize`
@@ -354,6 +360,20 @@ Events: `event.notification.click`, `event.notification.dismiss`,
 - After client disconnect (or a short fallback timeout) the host finishes
   quitting. Packaged mode also terminates any BEAM child it spawned.
 - Elixir `EventBridge` maps `event.system.quit` → `Desktop.Window.quit/0`.
+
+### `rpc.eval` (host → client)
+
+Used by `--edw-rpc` after the control socket `instance.eval` request. The
+Elixir client handles it in `DesktopWebview.Transport` (`Code.eval_string/1` +
+`Kernel.inspect/1`). It does not require EventBridge.
+
+```json
+{"jsonrpc":"2.0","id":N,"method":"rpc.eval","params":{"expr":"1+1"}}
+```
+
+Success result: `{ "inspect": "2" }`. Eval error: JSON-RPC error `-32000`.
+No initialized Elixir client: the control-socket `instance.eval` fails
+non-zero (this method is not sent).
 
 ### Permissions (hybrid)
 

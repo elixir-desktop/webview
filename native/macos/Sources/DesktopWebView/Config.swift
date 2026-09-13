@@ -33,10 +33,17 @@ struct HostConfig {
     var beamNode: String? = nil
     var beamCookie: String? = nil
     var beamCookieFile: String? = nil
+    var instances: Instances = .multi
+    var instanceId: String? = nil
 
     enum Lifetime: String {
         case reconnect
         case coupled
+    }
+
+    enum Instances: String {
+        case multi
+        case single
     }
 
     static func parse(argv: [String]) -> HostConfig {
@@ -93,6 +100,11 @@ struct HostConfig {
                     cfg.recoveryScript = String(body.dropFirst(16))
                 } else if body.hasPrefix("recovery-after=") {
                     cfg.recoveryAfter = Int(body.dropFirst(15)) ?? 3
+                } else if body.hasPrefix("instances=") {
+                    let v = String(body.dropFirst(10))
+                    cfg.instances = Instances(rawValue: v) ?? .multi
+                } else if body.hasPrefix("instance-id=") {
+                    cfg.instanceId = String(body.dropFirst(12))
                 } else {
                     fputs("unknown --edw flag: \(a)\n", stderr)
                 }
@@ -128,6 +140,10 @@ struct HostConfig {
         if let v = ini["lifetime", "recovery_after"], let n = Int(v) {
             recoveryAfter = n
         }
+        if let v = ini["lifetime", "instances"], let i = Instances(rawValue: v) {
+            instances = i
+        }
+        if let v = ini["lifetime", "instance_id"] { instanceId = v }
         if let v = ini["beam", "enabled"] {
             beamEnabled = !(v == "false" || v == "0")
         }
@@ -162,6 +178,18 @@ struct HostConfig {
     func resourcesRoot() -> String {
         if let res = Bundle.main.resourcePath { return res }
         return URL(fileURLWithPath: CommandLine.arguments[0]).deletingLastPathComponent().path
+    }
+
+    func exeBasename() -> String {
+        if let url = Bundle.main.executableURL {
+            return url.lastPathComponent
+        }
+        return URL(fileURLWithPath: CommandLine.arguments[0]).lastPathComponent
+    }
+
+    func resolvedInstanceId() -> String {
+        if let id = instanceId, !id.isEmpty { return id }
+        return exeBasename()
     }
 }
 

@@ -151,6 +151,37 @@ defmodule DesktopWebview.Transport do
     state
   end
 
+  defp handle_message(%{"method" => "rpc.eval", "id" => id, "params" => params}, state) do
+    expr = params["expr"]
+
+    cond do
+      not is_binary(expr) or expr == "" ->
+        :ok = send_json(state.socket, Codec.error_response(id, -32602, "expr required"))
+
+      true ->
+        try do
+          {val, _} = Code.eval_string(expr)
+          :ok = send_json(state.socket, Codec.response(id, %{"inspect" => inspect(val)}))
+        rescue
+          e ->
+            :ok =
+              send_json(
+                state.socket,
+                Codec.error_response(id, -32000, Exception.message(e))
+              )
+        catch
+          kind, reason ->
+            :ok =
+              send_json(
+                state.socket,
+                Codec.error_response(id, -32000, Exception.format(kind, reason, []))
+              )
+        end
+    end
+
+    state
+  end
+
   defp handle_message(%{"method" => method, "params" => params} = msg, state)
        when not is_map_key(msg, "id") do
     broadcast(state, {:edw_event, method, params})

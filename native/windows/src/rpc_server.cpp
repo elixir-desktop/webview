@@ -209,6 +209,10 @@ void RpcServer::notify(const std::string& method, jsonutil::Json params) {
 }
 
 void RpcServer::request(const std::string& method, jsonutil::Json params, PendingCallback cb) {
+  if (client_sock_ == INVALID_SOCKET) {
+    cb(nullptr);
+    return;
+  }
   int id_num = next_outbound_id_++;
   jsonutil::Json id = id_num;
   pending_[jsonutil::id_key(id)] = std::move(cb);

@@ -107,6 +107,58 @@ final class HostController: NSObject, UNUserNotificationCenterDelegate {
         server.notify(method: "event.system.open_file", params: .object(["path": .string(path)]))
     }
 
+    func activateFromArgv(_ argv: [String]) {
+        if argv.isEmpty {
+            notifyReopen()
+        } else {
+            for a in argv {
+                if Self.looksLikeScheme(a) {
+                    notifyOpenURL(a)
+                } else if FileManager.default.fileExists(atPath: a) {
+                    notifyOpenFile(a)
+                } else {
+                    notifyOpenURL(a)
+                }
+            }
+        }
+        for w in windows.values {
+            raiseWindow(w)
+        }
+    }
+
+    func evalRpc(_ expr: String, done: @escaping (Bool, String) -> Void) {
+        guard initialized, server.hasClient else {
+            done(false, "no initialized Elixir client")
+            return
+        }
+        server.request(method: "rpc.eval", params: .object(["expr": .string(expr)])) { result in
+            if let inspect = result?["inspect"]?.stringValue {
+                done(true, inspect)
+            } else {
+                done(false, "rpc.eval failed")
+            }
+        }
+    }
+
+    private static func looksLikeScheme(_ s: String) -> Bool {
+        guard let colon = s.firstIndex(of: ":") else { return false }
+        let scheme = s[s.startIndex..<colon]
+        if scheme.isEmpty { return false }
+        let idx = s.distance(from: s.startIndex, to: colon)
+        if idx == 1, s.count >= 3 {
+            let third = s[s.index(s.startIndex, offsetBy: 2)]
+            if third == "\\" || third == "/" { return false }
+        }
+        for (i, ch) in scheme.enumerated() {
+            if i == 0 {
+                if !ch.isLetter { return false }
+            } else if !(ch.isLetter || ch.isNumber || ch == "+" || ch == "." || ch == "-") {
+                return false
+            }
+        }
+        return true
+    }
+
     private func clientDisconnected() {
         resetSession()
         // BEAM-first/dev (`--edw-no-beam`): the Elixir node owns the host. When it
@@ -199,6 +251,9 @@ final class HostController: NSObject, UNUserNotificationCenterDelegate {
         env["EDW_PORT"] = "\(server.port)"
         env["EDW_HOST"] = config.host
         for (k, v) in config.extraEnv { env[k] = v }
+        if env["RELEASE_DISTRIBUTION"] == nil {
+            env["RELEASE_DISTRIBUTION"] = "none"
+        }
         proc.environment = env
         let wd = config.beamWorkingDir.map {
             ($0 as NSString).isAbsolutePath ? $0 : (root as NSString).appendingPathComponent($0)

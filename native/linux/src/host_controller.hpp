@@ -7,6 +7,7 @@
 #include <gtk/gtk.h>
 #include <libnotify/notify.h>
 
+#include <functional>
 #include <map>
 #include <memory>
 #include <string>
@@ -43,6 +44,8 @@ class HostController {
 
   bool start();
   RpcServer& server() { return server_; }
+  void activate_from_argv(const std::vector<std::string>& argv);
+  void eval_rpc(const std::string& expr, std::function<void(bool ok, std::string inspect_or_err)> done);
 
  private:
   void client_disconnected();

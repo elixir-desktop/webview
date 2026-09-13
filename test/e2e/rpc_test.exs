@@ -13,61 +13,49 @@ defmodule DesktopWebview.E2E.RpcTest do
     :ok
   end
 
-  defp rpc_beam_dir! do
-    cookie = :edw_e2e_cookie
-    node = BeamFixture.ensure_distributed!(cookie)
-    beam_dir = BeamFixture.tmp_dir("edw-rpc")
-    on_exit(fn -> File.rm_rf(beam_dir) end)
-
-    BeamFixture.write_rpc_release!(beam_dir,
-      node: node,
-      cookie: to_string(cookie)
-    )
-
-    beam_dir
-  end
-
   test "inspects 1+1 as 2" do
-    beam_dir = rpc_beam_dir!()
+    {launcher, ctx} = BeamFixture.start_single_instance_host!("rpc")
 
     {out, status} =
       Launcher.oneshot([
         "--edw-rpc",
         "1+1",
-        "--edw-beam-path=#{beam_dir}"
+        "--edw-config=#{ctx.ini}",
+        "--edw-instance-id=#{ctx.id}"
       ])
 
     assert status == 0, out
     assert String.split(String.trim(out), "\n", trim: true) |> Enum.any?(&(&1 == "2"))
+    BeamFixture.stop_host(launcher)
   end
 
-  test "evaluates a module on the test node" do
-    beam_dir = rpc_beam_dir!()
+  test "evaluates a module on the connected client" do
+    {launcher, ctx} = BeamFixture.start_single_instance_host!("rpc")
 
     {out, status} =
       Launcher.oneshot([
         "--edw-rpc",
         "DesktopWebview.Binary.available?()",
-        "--edw-beam-path=#{beam_dir}"
+        "--edw-config=#{ctx.ini}",
+        "--edw-instance-id=#{ctx.id}"
       ])
 
     assert status == 0, out
     assert String.trim(out) |> String.split("\n", trim: true) |> Enum.any?(&(&1 == "true"))
+    BeamFixture.stop_host(launcher)
   end
 
-  test "fails when the node name is wrong" do
-    beam_dir = rpc_beam_dir!()
-
-    File.write!(
-      Path.join(beam_dir, "releases/0.1.0/vm.args"),
-      "-name missing_edw_rpc@127.0.0.1\n-setcookie edw_e2e_cookie\n"
-    )
+  test "fails when no single-instance host is running" do
+    ctx = BeamFixture.write_instance_ini!(BeamFixture.unique_id("rpc-missing"))
+    ini = ctx.ini
+    id = ctx.instance_id
 
     {_out, status} =
       Launcher.oneshot([
         "--edw-rpc",
         "1+1",
-        "--edw-beam-path=#{beam_dir}"
+        "--edw-config=#{ini}",
+        "--edw-instance-id=#{id}"
       ])
 
     assert status != 0
