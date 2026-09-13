@@ -99,6 +99,30 @@ HostConfig HostConfig::parse(int argc, char** argv) {
         cfg.beam_path = body.substr(10);
       } else if (body.rfind("beam-app=", 0) == 0) {
         cfg.beam_app = body.substr(9);
+      } else if (body.rfind("restart-beam=", 0) == 0) {
+        auto v = body.substr(13);
+        cfg.restart_beam = !(v == "false" || v == "0");
+      } else if (body.rfind("max-restart-attempts=", 0) == 0) {
+        cfg.restart_max_attempts = std::stoi(body.substr(21));
+      } else if (body.rfind("restart-backoff-ms=", 0) == 0) {
+        cfg.restart_backoff_ms = static_cast<uint32_t>(std::stoul(body.substr(19)));
+      } else if (body == "recover") {
+        cfg.recover = true;
+      } else if (body == "rpc") {
+        if (i + 1 < argc) cfg.rpc_expr = argv[++i];
+        else
+          cfg.rpc_expr = "";
+      } else if (body.rfind("rpc=", 0) == 0) {
+        cfg.rpc_expr = body.substr(4);
+      } else if (body.rfind("recovery-script=", 0) == 0) {
+        cfg.recovery_script = body.substr(16);
+      } else if (body.rfind("recovery-after=", 0) == 0) {
+        cfg.recovery_after = std::stoi(body.substr(15));
+      } else if (body.rfind("instances=", 0) == 0) {
+        auto v = body.substr(10);
+        cfg.instances = (v == "single") ? Instances::Single : Instances::Multi;
+      } else if (body.rfind("instance-id=", 0) == 0) {
+        cfg.instance_id = body.substr(12);
       } else {
         fprintf(stderr, "unknown --edw flag: %s\n", a.c_str());
       }
@@ -139,6 +163,23 @@ std::optional<std::string> HostConfig::resolve_ini_path() const {
   return std::nullopt;
 }
 
+std::string HostConfig::exe_basename() const {
+  char buf[MAX_PATH];
+  DWORD n = GetModuleFileNameA(nullptr, buf, MAX_PATH);
+  if (n == 0 || n >= MAX_PATH) return "DesktopWebView";
+  std::string p = buf;
+  auto slash = p.find_last_of("/\\");
+  std::string base = (slash == std::string::npos) ? p : p.substr(slash + 1);
+  auto dot = base.find_last_of('.');
+  if (dot != std::string::npos) base = base.substr(0, dot);
+  return base.empty() ? "DesktopWebView" : base;
+}
+
+std::string HostConfig::resolved_instance_id() const {
+  if (instance_id && !instance_id->empty()) return *instance_id;
+  return exe_basename();
+}
+
 void HostConfig::apply_ini() {
   auto path = resolve_ini_path();
   if (!path) return;
@@ -173,6 +214,15 @@ void HostConfig::apply_ini() {
   if (auto v = ini.get("lifetime", "restart_backoff_ms")) {
     restart_backoff_ms = static_cast<uint32_t>(std::stoul(*v));
   }
+  if (auto v = ini.get("lifetime", "recovery_script")) recovery_script = *v;
+  if (auto v = ini.get("lifetime", "recovery_after")) recovery_after = std::stoi(*v);
+  if (auto v = ini.get("lifetime", "instances")) {
+    instances = (*v == "single") ? Instances::Single : Instances::Multi;
+  }
+  if (auto v = ini.get("lifetime", "instance_id")) instance_id = *v;
+  if (auto v = ini.get("beam", "node")) beam_node = *v;
+  if (auto v = ini.get("beam", "cookie")) beam_cookie = *v;
+  if (auto v = ini.get("beam", "cookie_file")) beam_cookie_file = *v;
   for (auto& [k, v] : ini.section("env")) {
     extra_env[k] = v;
   }

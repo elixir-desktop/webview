@@ -58,6 +58,9 @@ See [docs/packaging.md](docs/packaging.md).
 - [Protocol](docs/protocol.md) — framing, methods, behavioral semantics, test RPC
 - [Porting](docs/porting.md) — checklist for Windows / Linux hosts
 - [Packaging](docs/packaging.md) — ini, argv, layouts, binaries
+- [`--edw-rpc`](docs/specs/feature-edw-rpc.md) — one-shot Elixir via control socket + `rpc.eval`
+- [Single-instance](docs/specs/feature-single-instance.md) — host-owned lock and second-launch activate
+- [BEAM restart / `--edw-recover`](docs/specs/feature-beam-restart.md)
 - [Desktop integration](docs/desktop-integration.md)
 - [AGENTS.md](AGENTS.md) — contributor / agent rules
 

@@ -37,5 +37,9 @@ manual-only with justification).
 | Dialog prompt | done | `NSAlert` + text field (manual) |
 | EventBridge Env/Window/Menu | done | Elixir unit coverage |
 | Test RPC channel | done | `--edw-test-rpc` |
+| `--edw-rpc` (control socket) | done | One-shot `instance.eval` → `rpc.eval`; [feature-edw-rpc.md](../specs/feature-edw-rpc.md) |
+| Single-instance lock + activate | done | [feature-single-instance.md](../specs/feature-single-instance.md) |
+| Host-driven BEAM restart + backoff | done | Reset counters on `initialize`; E2E |
+| Startup recovery script and `--edw-recover` | done | Mix `eval`; [feature-beam-restart.md](../specs/feature-beam-restart.md) |
 | Universal binary in priv | done | CI |
 | Ad-hoc codesign | done | |

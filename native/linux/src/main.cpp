@@ -1,13 +1,27 @@
+#include "beam_cli.hpp"
 #include "config.hpp"
 #include "host_controller.hpp"
+#include "instance_lock.hpp"
 
 #include <gtk/gtk.h>
 
 #include <cstdio>
 #include <memory>
+#include <string>
+#include <vector>
 
 int main(int argc, char** argv) {
   auto config = HostConfig::parse(argc, argv);
+  int exclusive = 0;
+  if (beamcli::maybe_run_exclusive(config, &exclusive)) return exclusive;
+
+  std::unique_ptr<InstanceLock> lock;
+  if (config.instances == Instances::Single) {
+    lock = std::make_unique<InstanceLock>();
+    if (!lock->try_serve(config.resolved_instance_id())) {
+      return InstanceLock::client_activate(config.resolved_instance_id(), config.forwarded_argv);
+    }
+  }
 
   // Prefer software rendering when unset — WebKitGPU/DMA-BUF crashes are common on Xvfb.
   if (!g_getenv("WEBKIT_DISABLE_COMPOSITING_MODE"))
@@ -21,6 +35,14 @@ int main(int argc, char** argv) {
   gtk_init();
 
   auto host = std::make_unique<HostController>(std::move(config));
+  if (lock) {
+    HostController* h = host.get();
+    lock->set_handlers([h](const std::vector<std::string>& argv) { h->activate_from_argv(argv); },
+                       [h](const std::string& expr, InstanceLock::EvalDone done) {
+                         h->eval_rpc(expr, std::move(done));
+                       });
+    lock->start();
+  }
   if (!host->start()) {
     fprintf(stderr, "failed to start host\n");
     return 1;

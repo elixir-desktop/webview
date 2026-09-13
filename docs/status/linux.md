@@ -34,5 +34,9 @@ Host: GTK 4 + WebKitGTK 6 (`native/linux/`). Binary delivery via GitHub Releases
 | Camera in webview | done | E2E via test RPC + fixture |
 | HTML `<input type=file>` and file-manager drag-and-drop | partial | WebKitGTK default chooser and drag handling; native picker and file-manager checks pending |
 | Test RPC channel | done | `--edw-test-rpc` |
+| `--edw-rpc` (control socket) | done | One-shot `instance.eval` → `rpc.eval`; [feature-edw-rpc.md](../specs/feature-edw-rpc.md) |
+| Single-instance lock + activate | done | [feature-single-instance.md](../specs/feature-single-instance.md) |
+| Host-driven BEAM restart + backoff | done | Reset counters on `initialize`; shared E2E |
+| Startup recovery script and `--edw-recover` | done | Mix `eval`; [feature-beam-restart.md](../specs/feature-beam-restart.md) |
 | Release artifact download | todo | |
 | CI build | done | ubuntu-latest + xvfb |

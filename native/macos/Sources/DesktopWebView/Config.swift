@@ -23,10 +23,27 @@ struct HostConfig {
     /// Initial backoff between respawn attempts (ms). Doubles per attempt,
     /// capped at 5000 ms.
     var restartBackoffMs: UInt32 = 500
+    /// One-shot Elixir expression for `--edw-rpc`.
+    var rpcExpr: String? = nil
+    /// One-shot Mix eval of `recoveryScript` (`--edw-recover`).
+    var recover: Bool = false
+    var recoveryScript: String? = nil
+    /// Consecutive startup crashes before automatic recovery. `0` disables auto recovery.
+    var recoveryAfter: Int = 3
+    var beamNode: String? = nil
+    var beamCookie: String? = nil
+    var beamCookieFile: String? = nil
+    var instances: Instances = .multi
+    var instanceId: String? = nil
 
     enum Lifetime: String {
         case reconnect
         case coupled
+    }
+
+    enum Instances: String {
+        case multi
+        case single
     }
 
     static func parse(argv: [String]) -> HostConfig {
@@ -68,6 +85,26 @@ struct HostConfig {
                     cfg.restartMaxAttempts = Int(body.dropFirst(21)) ?? 0
                 } else if body.hasPrefix("restart-backoff-ms=") {
                     cfg.restartBackoffMs = UInt32(body.dropFirst(19)) ?? 500
+                } else if body == "recover" {
+                    cfg.recover = true
+                } else if body == "rpc" {
+                    i += 1
+                    if i < argv.count {
+                        cfg.rpcExpr = argv[i]
+                    } else {
+                        cfg.rpcExpr = ""
+                    }
+                } else if body.hasPrefix("rpc=") {
+                    cfg.rpcExpr = String(body.dropFirst(4))
+                } else if body.hasPrefix("recovery-script=") {
+                    cfg.recoveryScript = String(body.dropFirst(16))
+                } else if body.hasPrefix("recovery-after=") {
+                    cfg.recoveryAfter = Int(body.dropFirst(15)) ?? 3
+                } else if body.hasPrefix("instances=") {
+                    let v = String(body.dropFirst(10))
+                    cfg.instances = Instances(rawValue: v) ?? .multi
+                } else if body.hasPrefix("instance-id=") {
+                    cfg.instanceId = String(body.dropFirst(12))
                 } else {
                     fputs("unknown --edw flag: \(a)\n", stderr)
                 }
@@ -99,6 +136,14 @@ struct HostConfig {
         if let v = ini["lifetime", "restart_backoff_ms"], let n = UInt32(v) {
             restartBackoffMs = n
         }
+        if let v = ini["lifetime", "recovery_script"] { recoveryScript = v }
+        if let v = ini["lifetime", "recovery_after"], let n = Int(v) {
+            recoveryAfter = n
+        }
+        if let v = ini["lifetime", "instances"], let i = Instances(rawValue: v) {
+            instances = i
+        }
+        if let v = ini["lifetime", "instance_id"] { instanceId = v }
         if let v = ini["beam", "enabled"] {
             beamEnabled = !(v == "false" || v == "0")
         }
@@ -108,6 +153,9 @@ struct HostConfig {
             beamArgs = v.split(separator: " ").map(String.init)
         }
         if let v = ini["beam", "working_dir"] { beamWorkingDir = v }
+        if let v = ini["beam", "node"] { beamNode = v }
+        if let v = ini["beam", "cookie"] { beamCookie = v }
+        if let v = ini["beam", "cookie_file"] { beamCookieFile = v }
         for (k, v) in ini.section("env") {
             extraEnv[k] = v
         }
@@ -130,6 +178,18 @@ struct HostConfig {
     func resourcesRoot() -> String {
         if let res = Bundle.main.resourcePath { return res }
         return URL(fileURLWithPath: CommandLine.arguments[0]).deletingLastPathComponent().path
+    }
+
+    func exeBasename() -> String {
+        if let url = Bundle.main.executableURL {
+            return url.lastPathComponent
+        }
+        return URL(fileURLWithPath: CommandLine.arguments[0]).lastPathComponent
+    }
+
+    func resolvedInstanceId() -> String {
+        if let id = instanceId, !id.isEmpty { return id }
+        return exeBasename()
     }
 }
 

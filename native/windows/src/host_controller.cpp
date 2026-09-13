@@ -1,4 +1,5 @@
 #include "host_controller.hpp"
+#include "beam_cli.hpp"
 #include "win_util.hpp"
 
 #include <algorithm>
@@ -22,6 +23,23 @@ struct RequestMsg {
   jsonutil::Json params;
   RpcServer::ReplyFn reply;
 };
+
+struct EvalMsg {
+  std::string expr;
+  std::function<void(bool, std::string)> done;
+};
+
+bool looks_like_scheme(const std::string& s) {
+  auto colon = s.find(':');
+  if (colon == std::string::npos || colon == 0) return false;
+  if (colon == 1 && s.size() >= 3 && (s[2] == '\\' || s[2] == '/')) return false;
+  for (size_t i = 0; i < colon; i++) {
+    unsigned char c = static_cast<unsigned char>(s[i]);
+    bool ok = (i == 0) ? std::isalpha(c) : (std::isalnum(c) || c == '+' || c == '.' || c == '-');
+    if (!ok) return false;
+  }
+  return true;
+}
 
 }  // namespace
 
@@ -107,6 +125,18 @@ LRESULT HostController::on_host_message(HWND hwnd, UINT msg, WPARAM wParam, LPAR
   if (msg == WM_EDW_REQUEST) {
     auto* m = reinterpret_cast<RequestMsg*>(lParam);
     handle_request(std::move(m->id), m->method, std::move(m->params), std::move(m->reply));
+    delete m;
+    return 0;
+  }
+  if (msg == WM_EDW_INSTANCE_ACTIVATE) {
+    auto* argv = reinterpret_cast<std::vector<std::string>*>(lParam);
+    activate_from_argv(*argv);
+    delete argv;
+    return 0;
+  }
+  if (msg == WM_EDW_INSTANCE_EVAL) {
+    auto* m = reinterpret_cast<EvalMsg*>(lParam);
+    eval_rpc(m->expr, std::move(m->done));
     delete m;
     return 0;
   }
@@ -217,6 +247,7 @@ void HostController::watch_beam_process() {
 }
 
 void HostController::beam_did_exit() {
+  bool was_initialized = initialized_;
   clear_beam_watch();
   if (beam_process_) {
     CloseHandle(beam_process_);
@@ -232,24 +263,27 @@ void HostController::beam_did_exit() {
     expected_beam_exit_ = false;
     return;
   }
-  if (should_respawn_beam()) {
-    schedule_beam_respawn();
+  if (!config_.restart_beam) return;
+  if (!was_initialized) {
+    startup_failures_ += 1;
+    if (config_.recovery_after > 0 && startup_failures_ >= config_.recovery_after &&
+        config_.recovery_script) {
+      fprintf(stderr, "edw: startup crash limit reached; running recovery script\n");
+      beamcli::run_recover(config_);
+      startup_failures_ = 0;
+    }
   }
-}
-
-bool HostController::should_respawn_beam() {
-  if (!config_.restart_beam) return false;
+  beam_restart_attempts_ += 1;
   if (config_.restart_max_attempts > 0 &&
       beam_restart_attempts_ >= config_.restart_max_attempts) {
     fprintf(stderr, "edw: beam exited; restart limit reached, terminating host\n");
     PostQuitMessage(1);
-    return false;
+    return;
   }
-  return true;
+  schedule_beam_respawn();
 }
 
 void HostController::schedule_beam_respawn() {
-  beam_restart_attempts_ += 1;
   int shift = (std::min)(beam_restart_attempts_ - 1, 4);
   uint32_t multiplier = static_cast<uint32_t>(1) << shift;
   uint32_t backoff = (std::min)(config_.restart_backoff_ms * multiplier, 5000u);
@@ -364,6 +398,9 @@ void HostController::spawn_beam() {
   env["EDW_PORT"] = std::to_string(server_.port());
   env["EDW_HOST"] = config_.host;
   for (auto& [k, v] : config_.extra_env) env[k] = v;
+  if (env.find("RELEASE_DISTRIBUTION") == env.end()) {
+    env["RELEASE_DISTRIBUTION"] = "none";
+  }
 
   std::wstring env_block;
   for (auto& [k, v] : env) {
@@ -398,8 +435,52 @@ void HostController::spawn_beam() {
   }
   CloseHandle(pi.hThread);
   beam_process_ = pi.hProcess;
-  beam_restart_attempts_ = 0;
   watch_beam_process();
+}
+
+void HostController::activate_from_argv(const std::vector<std::string>& argv) {
+  if (hwnd_ && GetCurrentThreadId() != GetWindowThreadProcessId(hwnd_, nullptr)) {
+    auto* heap = new std::vector<std::string>(argv);
+    SendMessageW(hwnd_, WM_EDW_INSTANCE_ACTIVATE, 0, reinterpret_cast<LPARAM>(heap));
+    return;
+  }
+  if (argv.empty()) {
+    server_.notify("event.system.reopen", jsonutil::Json::object());
+  } else {
+    for (const auto& a : argv) {
+      if (looks_like_scheme(a)) {
+        server_.notify("event.system.open_url", jsonutil::Json{{"url", a}});
+      } else if (file_exists(a)) {
+        server_.notify("event.system.open_file", jsonutil::Json{{"path", a}});
+      } else {
+        server_.notify("event.system.open_url", jsonutil::Json{{"url", a}});
+      }
+    }
+  }
+  for (auto& [_, w] : windows_) {
+    w->show();
+    w->raise();
+  }
+}
+
+void HostController::eval_rpc(const std::string& expr, std::function<void(bool, std::string)> done) {
+  if (hwnd_ && GetCurrentThreadId() != GetWindowThreadProcessId(hwnd_, nullptr)) {
+    auto* m = new EvalMsg{expr, std::move(done)};
+    PostMessageW(hwnd_, WM_EDW_INSTANCE_EVAL, 0, reinterpret_cast<LPARAM>(m));
+    return;
+  }
+  if (!initialized_ || !server_.has_client()) {
+    done(false, "no initialized Elixir client");
+    return;
+  }
+  server_.request("rpc.eval", jsonutil::Json{{"expr", expr}}, [done](jsonutil::Json result) {
+    auto inspect = jsonutil::get_string(result, "inspect");
+    if (inspect) {
+      done(true, *inspect);
+    } else {
+      done(false, "rpc.eval failed");
+    }
+  });
 }
 
 void HostController::handle_request(jsonutil::Json id, const std::string& method,
@@ -729,6 +810,8 @@ jsonutil::Json HostController::dispatch(const std::string& method, const jsonuti
 
   if (method == "initialize") {
     initialized_ = true;
+    beam_restart_attempts_ = 0;
+    startup_failures_ = 0;
     return jsonutil::Json{
         {"protocol_version", 1},
         {"platform", "windows"},

@@ -7,6 +7,7 @@
 #include <vector>
 
 enum class Lifetime { Reconnect, Coupled };
+enum class Instances { Multi, Single };
 
 struct HostConfig {
   bool no_beam = false;
@@ -26,11 +27,22 @@ struct HostConfig {
   bool restart_beam = true;
   int restart_max_attempts = 0;
   uint32_t restart_backoff_ms = 500;
+  std::optional<std::string> rpc_expr;
+  bool recover = false;
+  std::optional<std::string> recovery_script;
+  int recovery_after = 3;
+  std::optional<std::string> beam_node;
+  std::optional<std::string> beam_cookie;
+  std::optional<std::string> beam_cookie_file;
+  Instances instances = Instances::Multi;
+  std::optional<std::string> instance_id;
 
   static HostConfig parse(int argc, char** argv);
 
   std::string resources_root() const;
   std::optional<std::string> resolve_ini_path() const;
+  std::string resolved_instance_id() const;
+  std::string exe_basename() const;
 
  private:
   void apply_ini();

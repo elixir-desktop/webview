@@ -220,6 +220,11 @@ void RpcServer::notify(const std::string& method, JsonNode* params) {
 }
 
 void RpcServer::request(const std::string& method, JsonNode* params, PendingCallback cb) {
+  if (!connection_) {
+    if (params) json_node_free(params);
+    cb(nullptr);
+    return;
+  }
   int id_num = next_outbound_id_++;
   JsonNode* id = jsonutil::int_node(id_num);
   pending_[jsonutil::id_key(id)] = std::move(cb);

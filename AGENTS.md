@@ -35,6 +35,7 @@ config :desktop, :menu_adapter, DesktopWebview.Menu.Adapter
 5. **No native unit-test frameworks** (no XCTest, etc.) as the source of truth. Extend the shared Elixir E2E suite instead. Test-only RPC (`test.*`) is allowed when gated by `--edw-test-rpc`.
 6. **Status matrices are authoritative.** Mark a feature `done` on a platform only when Elixir E2E covers it.
 7. **Per-platform native code stays isolated.** Do not share Swift/C++/GTK UI code across `native/*` until a deliberate shared core exists.
+8. **Single-instance and `--edw-rpc` go through the control socket.** Do not replace the Elixir TCP client. Second launch uses `instance.activate`; `--edw-rpc` uses `instance.eval` → host→client `rpc.eval`. Do not use `erl_call` / epmd for these paths.
 
 ## Protocol ownership
 

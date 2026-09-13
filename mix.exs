@@ -26,7 +26,10 @@ defmodule DesktopWebview.MixProject do
           "docs/desktop-integration.md",
           "docs/status/macos.md",
           "docs/status/windows.md",
-          "docs/status/linux.md"
+          "docs/status/linux.md",
+          "docs/specs/feature-edw-rpc.md",
+          "docs/specs/feature-single-instance.md",
+          "docs/specs/feature-beam-restart.md"
         ]
       ]
     ]

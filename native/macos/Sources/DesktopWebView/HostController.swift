@@ -32,8 +32,10 @@ final class HostController: NSObject, UNUserNotificationCenterDelegate {
     /// Set by `system.prepare_quit` so a BEAM exit during this window is
     /// treated as a clean shutdown (no host-driven respawn).
     private var expectedBeamExitUntil: Date? = nil
-    /// Number of times the host has respawned BEAM in this process's lifetime.
+    /// Number of consecutive unexpected BEAM exits since last `initialize`.
     private var beamRestartAttempts: Int = 0
+    /// Consecutive child exits before `initialize` (startup crashes).
+    private var startupFailures: Int = 0
     /// Pending restart timer; cancelled if the host quits before it fires.
     private var restartTimer: DispatchSourceTimer? = nil
     /// When true, `applicationShouldTerminate` cancels so last-window teardown
@@ -103,6 +105,58 @@ final class HostController: NSObject, UNUserNotificationCenterDelegate {
 
     func notifyOpenFile(_ path: String) {
         server.notify(method: "event.system.open_file", params: .object(["path": .string(path)]))
+    }
+
+    func activateFromArgv(_ argv: [String]) {
+        if argv.isEmpty {
+            notifyReopen()
+        } else {
+            for a in argv {
+                if Self.looksLikeScheme(a) {
+                    notifyOpenURL(a)
+                } else if FileManager.default.fileExists(atPath: a) {
+                    notifyOpenFile(a)
+                } else {
+                    notifyOpenURL(a)
+                }
+            }
+        }
+        for w in windows.values {
+            raiseWindow(w)
+        }
+    }
+
+    func evalRpc(_ expr: String, done: @escaping (Bool, String) -> Void) {
+        guard initialized, server.hasClient else {
+            done(false, "no initialized Elixir client")
+            return
+        }
+        server.request(method: "rpc.eval", params: .object(["expr": .string(expr)])) { result in
+            if let inspect = result?["inspect"]?.stringValue {
+                done(true, inspect)
+            } else {
+                done(false, "rpc.eval failed")
+            }
+        }
+    }
+
+    private static func looksLikeScheme(_ s: String) -> Bool {
+        guard let colon = s.firstIndex(of: ":") else { return false }
+        let scheme = s[s.startIndex..<colon]
+        if scheme.isEmpty { return false }
+        let idx = s.distance(from: s.startIndex, to: colon)
+        if idx == 1, s.count >= 3 {
+            let third = s[s.index(s.startIndex, offsetBy: 2)]
+            if third == "\\" || third == "/" { return false }
+        }
+        for (i, ch) in scheme.enumerated() {
+            if i == 0 {
+                if !ch.isLetter { return false }
+            } else if !(ch.isLetter || ch.isNumber || ch == "+" || ch == "." || ch == "-") {
+                return false
+            }
+        }
+        return true
     }
 
     private func clientDisconnected() {
@@ -197,6 +251,9 @@ final class HostController: NSObject, UNUserNotificationCenterDelegate {
         env["EDW_PORT"] = "\(server.port)"
         env["EDW_HOST"] = config.host
         for (k, v) in config.extraEnv { env[k] = v }
+        if env["RELEASE_DISTRIBUTION"] == nil {
+            env["RELEASE_DISTRIBUTION"] = "none"
+        }
         proc.environment = env
         let wd = config.beamWorkingDir.map {
             ($0 as NSString).isAbsolutePath ? $0 : (root as NSString).appendingPathComponent($0)
@@ -217,6 +274,7 @@ final class HostController: NSObject, UNUserNotificationCenterDelegate {
     /// based on whether the exit looked intentional (`system.prepare_quit`)
     /// and whether we have a maximum-attempts budget left.
     private func beamDidExit() {
+        let wasInitialized = initialized
         resetSession()
         beamProcess = nil
         restartTimer?.cancel()
@@ -233,12 +291,21 @@ final class HostController: NSObject, UNUserNotificationCenterDelegate {
         if !config.restartBeam {
             return
         }
-        if config.restartMaxAttempts > 0, beamRestartAttempts >= config.restartMaxAttempts {
-            fputs("edw: beam exited; restart limit reached, terminating host\n", stderr)
-            NSApp.terminate(nil)
-            return
+        if !wasInitialized {
+            startupFailures += 1
+            if config.recoveryAfter > 0,
+               startupFailures >= config.recoveryAfter,
+               config.recoveryScript != nil {
+                fputs("edw: startup crash limit reached; running recovery script\n", stderr)
+                _ = BeamCli.runRecover(config: config)
+                startupFailures = 0
+            }
         }
         beamRestartAttempts += 1
+        if config.restartMaxAttempts > 0, beamRestartAttempts >= config.restartMaxAttempts {
+            fputs("edw: beam exited; restart limit reached, terminating host\n", stderr)
+            exit(1)
+        }
         let shift = min(beamRestartAttempts - 1, 4)
         let multiplier = UInt32(1 << shift)
         let backoff = min(config.restartBackoffMs * multiplier, 5_000)
@@ -343,6 +410,8 @@ final class HostController: NSObject, UNUserNotificationCenterDelegate {
         case "initialize":
             resetSession()
             initialized = true
+            beamRestartAttempts = 0
+            startupFailures = 0
             return .object([
                 "protocol_version": .number(1),
                 "platform": .string("macos"),

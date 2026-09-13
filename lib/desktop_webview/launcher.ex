@@ -14,6 +14,8 @@ defmodule DesktopWebview.Launcher do
     * `:port` — `--edw-port` (default 0)
     * `:lifetime` — `:reconnect` | `:coupled`
     * `:extra_args` — additional argv
+    * `:no_beam` — pass `--edw-no-beam` (default true)
+    * `:timeout` — wait for `listening` (ms)
   """
   def start(opts \\ []) do
     binary = Keyword.get(opts, :binary) || DesktopWebview.Binary.path()
@@ -22,7 +24,8 @@ defmodule DesktopWebview.Launcher do
       {:error, {:binary_missing, binary}}
     else
       args =
-        ["--edw-no-beam", "--edw-port=#{Keyword.get(opts, :port, 0)}"] ++
+        no_beam_args(opts) ++
+          ["--edw-port=#{Keyword.get(opts, :port, 0)}"] ++
           test_rpc_args(opts) ++
           lifetime_args(opts) ++
           Keyword.get(opts, :extra_args, [])
@@ -38,12 +41,28 @@ defmodule DesktopWebview.Launcher do
           ]
         )
 
+      os_pid =
+        case Port.info(port, :os_pid) do
+          {:os_pid, pid} -> pid
+          _ -> nil
+        end
+
       case await_listening(port, Keyword.get(opts, :timeout, 10_000)) do
         {:ok, listen_port} ->
-          # Keep draining host stdout/stderr so WebKit logs cannot fill the pipe.
-          drain_pid = spawn_link(fn -> drain_port(port) end)
+          # Drain without linking to the caller. A link would exit the caller
+          # when the drain stops, and a stored drain pid must never be killed
+          # later — ExUnit can reuse that pid for the next test.
+          drain_pid = spawn(fn -> drain_port(port) end)
           true = Port.connect(port, drain_pid)
-          {:ok, %{port: port, listen_port: listen_port, binary: binary, drain_pid: drain_pid}}
+
+          {:ok,
+           %{
+             port: port,
+             listen_port: listen_port,
+             binary: binary,
+             drain_pid: drain_pid,
+             os_pid: os_pid
+           }}
 
         {:error, reason} ->
           close_port(port)
@@ -52,17 +71,37 @@ defmodule DesktopWebview.Launcher do
     end
   end
 
-  def stop(%{port: port} = launcher) when is_port(port) do
-    if pid = Map.get(launcher, :drain_pid) do
-      Process.unlink(pid)
-      Process.exit(pid, :kill)
-    end
+  @doc """
+  Run the host as a one-shot CLI (`--edw-rpc` / `--edw-recover`). Does not wait for `listening`.
+  """
+  def oneshot(args, opts \\ []) when is_list(args) do
+    binary = Keyword.get(opts, :binary) || DesktopWebview.Binary.path()
+    System.cmd(binary, args, stderr_to_stdout: true)
+  end
 
+  def stop(%{port: port} = launcher) when is_port(port) do
     close_port(port)
+    terminate_os(Map.get(launcher, :os_pid))
     :ok
   end
 
   def stop(_), do: :ok
+
+  defp terminate_os(os_pid) when is_integer(os_pid) and os_pid > 0 do
+    case :os.type() do
+      {:win32, _} ->
+        System.cmd("taskkill", ["/PID", Integer.to_string(os_pid), "/T", "/F"],
+          stderr_to_stdout: true
+        )
+
+      _ ->
+        System.cmd("kill", ["-TERM", Integer.to_string(os_pid)], stderr_to_stdout: true)
+    end
+  rescue
+    _ -> :ok
+  end
+
+  defp terminate_os(_), do: :ok
 
   defp close_port(port) do
     case Port.info(port) do
@@ -75,6 +114,10 @@ defmodule DesktopWebview.Launcher do
 
   defp test_rpc_args(opts) do
     if Keyword.get(opts, :test_rpc, false), do: ["--edw-test-rpc"], else: []
+  end
+
+  defp no_beam_args(opts) do
+    if Keyword.get(opts, :no_beam, true), do: ["--edw-no-beam"], else: []
   end
 
   defp lifetime_args(opts) do

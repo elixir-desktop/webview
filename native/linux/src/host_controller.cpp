@@ -1,5 +1,6 @@
 #include "host_controller.hpp"
 
+#include "beam_cli.hpp"
 #include "json_util.hpp"
 
 #include <webkit/webkit.h>
@@ -204,6 +205,14 @@ void HostController::spawn_beam() {
   env_store.push_back("EDW_PORT=" + std::to_string(server_.port()));
   env_store.push_back("EDW_HOST=" + config_.host);
   for (auto& [k, v] : config_.extra_env) env_store.push_back(k + "=" + v);
+  bool has_rel_dist = false;
+  for (auto& e : env_store) {
+    if (e.rfind("RELEASE_DISTRIBUTION=", 0) == 0) {
+      has_rel_dist = true;
+      break;
+    }
+  }
+  if (!has_rel_dist) env_store.push_back("RELEASE_DISTRIBUTION=none");
   std::vector<char*> envp;
   for (auto& s : env_store) envp.push_back(s.data());
   envp.push_back(nullptr);
@@ -216,8 +225,6 @@ void HostController::spawn_beam() {
     beam_pid_ = 0;
     return;
   }
-  // Reset counter when we successfully spawn a fresh BEAM.
-  beam_restart_attempts_ = 0;
   // Watch the child; when BEAM exits, decide whether to respawn it (mirrors
   // the Swift HostController.terminationHandler path).
   g_child_watch_add(beam_pid_,
@@ -229,6 +236,7 @@ void HostController::spawn_beam() {
 }
 
 void HostController::beam_did_exit() {
+  bool was_initialized = initialized_;
   reset_session();
   beam_pid_ = 0;
   if (restart_timer_id_ != 0) {
@@ -242,24 +250,26 @@ void HostController::beam_did_exit() {
     expected_beam_exit_ = false;
     return;
   }
-  if (should_respawn_beam()) {
-    schedule_beam_respawn();
+  if (!config_.restart_beam) return;
+  if (!was_initialized) {
+    startup_failures_ += 1;
+    if (config_.recovery_after > 0 && startup_failures_ >= config_.recovery_after &&
+        config_.recovery_script) {
+      fprintf(stderr, "edw: startup crash limit reached; running recovery script\n");
+      beamcli::run_recover(config_);
+      startup_failures_ = 0;
+    }
   }
-}
-
-bool HostController::should_respawn_beam() {
-  if (!config_.restart_beam) return false;
+  beam_restart_attempts_ += 1;
   if (config_.restart_max_attempts > 0 &&
       beam_restart_attempts_ >= config_.restart_max_attempts) {
     fprintf(stderr, "edw: beam exited; restart limit reached, terminating host\n");
-    g_main_loop_quit(nullptr);
-    return false;
+    exit(1);
   }
-  return true;
+  schedule_beam_respawn();
 }
 
 void HostController::schedule_beam_respawn() {
-  beam_restart_attempts_ += 1;
   int shift = std::min(beam_restart_attempts_ - 1, 4);
   uint32_t multiplier = static_cast<uint32_t>(1) << shift;
   uint32_t backoff = std::min(config_.restart_backoff_ms * multiplier, 5000u);
@@ -275,6 +285,77 @@ void HostController::schedule_beam_respawn() {
         return G_SOURCE_REMOVE;
       },
       this);
+}
+
+namespace {
+
+bool looks_like_scheme(const std::string& s) {
+  auto colon = s.find(':');
+  if (colon == std::string::npos || colon == 0) return false;
+  if (colon == 1 && s.size() >= 3 && (s[2] == '\\' || s[2] == '/')) return false;
+  for (size_t i = 0; i < colon; i++) {
+    unsigned char c = static_cast<unsigned char>(s[i]);
+    bool ok = (i == 0) ? std::isalpha(c) : (std::isalnum(c) || c == '+' || c == '.' || c == '-');
+    if (!ok) return false;
+  }
+  return true;
+}
+
+void notify_object(RpcServer& server, const std::string& method, JsonObject* o) {
+  JsonNode* n = json_node_alloc();
+  json_node_init_object(n, o);
+  json_object_unref(o);
+  server.notify(method, n);
+}
+
+}  // namespace
+
+void HostController::activate_from_argv(const std::vector<std::string>& argv) {
+  if (argv.empty()) {
+    JsonObject* o = jsonutil::object_new();
+    notify_object(server_, "event.system.reopen", o);
+  } else {
+    for (const auto& a : argv) {
+      if (looks_like_scheme(a)) {
+        JsonObject* o = jsonutil::object_new();
+        json_object_set_string_member(o, "url", a.c_str());
+        notify_object(server_, "event.system.open_url", o);
+      } else if (g_file_test(a.c_str(), G_FILE_TEST_EXISTS)) {
+        JsonObject* o = jsonutil::object_new();
+        json_object_set_string_member(o, "path", a.c_str());
+        notify_object(server_, "event.system.open_file", o);
+      } else {
+        JsonObject* o = jsonutil::object_new();
+        json_object_set_string_member(o, "url", a.c_str());
+        notify_object(server_, "event.system.open_url", o);
+      }
+    }
+  }
+  for (auto& [_, w] : windows_) {
+    w->show();
+    w->raise();
+  }
+}
+
+void HostController::eval_rpc(const std::string& expr,
+                             std::function<void(bool, std::string)> done) {
+  if (!initialized_ || !server_.has_client()) {
+    done(false, "no initialized Elixir client");
+    return;
+  }
+  JsonObject* o = jsonutil::object_new();
+  json_object_set_string_member(o, "expr", expr.c_str());
+  JsonNode* n = json_node_alloc();
+  json_node_init_object(n, o);
+  json_object_unref(o);
+  server_.request("rpc.eval", n, [done](JsonNode* result) {
+    JsonObject* obj = jsonutil::as_object(result);
+    if (auto inspect = jsonutil::object_get_string(obj, "inspect")) {
+      done(true, *inspect);
+      return;
+    }
+    done(false, "rpc.eval failed");
+  });
 }
 
 void HostController::handle_request(JsonNode* id, const std::string& method, JsonNode* params,
@@ -693,6 +774,8 @@ JsonNode* HostController::dispatch(const std::string& method, JsonNode* params) 
   if (method == "initialize") {
     reset_session();
     initialized_ = true;
+    beam_restart_attempts_ = 0;
+    startup_failures_ = 0;
     JsonObject* caps = jsonutil::object_new();
     json_object_set_boolean_member(caps, "window", TRUE);
     json_object_set_boolean_member(caps, "webview", TRUE);

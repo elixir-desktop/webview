@@ -7,6 +7,7 @@
 #include <gtk/gtk.h>
 #include <libnotify/notify.h>
 
+#include <functional>
 #include <map>
 #include <memory>
 #include <string>
@@ -43,6 +44,8 @@ class HostController {
 
   bool start();
   RpcServer& server() { return server_; }
+  void activate_from_argv(const std::vector<std::string>& argv);
+  void eval_rpc(const std::string& expr, std::function<void(bool ok, std::string inspect_or_err)> done);
 
  private:
   void client_disconnected();
@@ -50,8 +53,6 @@ class HostController {
   void spawn_beam();
   // Called from a glib child-watch source whenever BEAM exits.
   void beam_did_exit();
-  // Decide whether to respawn BEAM (mirrors the Swift logic).
-  bool should_respawn_beam();
   // Schedule a delayed respawn via glib main-loop timer.
   void schedule_beam_respawn();
   std::string next_id(const std::string& prefix);
@@ -99,5 +100,6 @@ class HostController {
   bool expected_beam_exit_ = false;
   bool quit_initiated_ = false;
   int beam_restart_attempts_ = 0;
+  int startup_failures_ = 0;
   guint restart_timer_id_ = 0;
 };

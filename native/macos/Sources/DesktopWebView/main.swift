@@ -40,12 +40,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 }
 
 let config = HostConfig.parse(argv: CommandLine.arguments)
+if let code = BeamCli.exclusiveExitCode(config) {
+    exit(code)
+}
+
+var lock: InstanceLock?
+if config.instances == .single {
+    let candidate = InstanceLock()
+    if !candidate.tryServe(config.resolvedInstanceId()) {
+        exit(InstanceLock.clientActivate(config.resolvedInstanceId(), argv: config.forwardedArgv))
+    }
+    lock = candidate
+}
+
 let app = NSApplication.shared
 let delegate = AppDelegate()
 app.delegate = delegate
 
 let host = HostController(config: config)
 delegate.host = host
+if let lock {
+    lock.setHandlers(
+        activate: { host.activateFromArgv($0) },
+        eval: { host.evalRpc($0, done: $1) }
+    )
+    lock.start()
+}
 
 do {
     try host.start()
