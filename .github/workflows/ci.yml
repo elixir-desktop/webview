@@ -21,7 +21,6 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: elixir-desktop/desktop
-          ref: fix/tray-cleanup-on-window-crash
           path: desktop
       - run: mix deps.get
       - run: mix test --exclude e2e
@@ -41,7 +40,6 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: elixir-desktop/desktop
-          ref: fix/tray-cleanup-on-window-crash
           path: desktop
       - name: Build host
         run: ./scripts/build_macos.sh
@@ -70,7 +68,6 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: elixir-desktop/desktop
-          ref: fix/tray-cleanup-on-window-crash
           path: desktop
       - name: Install GTK / WebKitGTK
         run: |
@@ -109,7 +106,6 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: elixir-desktop/desktop
-          ref: fix/tray-cleanup-on-window-crash
           path: desktop
       - name: Build host
         shell: pwsh
