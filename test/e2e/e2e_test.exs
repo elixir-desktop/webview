@@ -372,8 +372,12 @@ defmodule DesktopWebview.E2ETest do
     end
   end
 
+  @tag :menu_crash
   test "menu process crash destroys native tray" do
     assert {:ok, %{"icon_id" => iid}} = Transport.call("icon.create", %{})
+
+    # Own EventBridge from this process so Menu exit does not take it down.
+    DesktopWebview.EventBridge.ensure_started()
 
     test = self()
 
@@ -407,6 +411,8 @@ defmodule DesktopWebview.E2ETest do
     end)
 
     assert {:ok, []} = Transport.call("test.tray.list", %{})
+
+    restore_transport()
   end
 
   test "default edit menu is installed with copy/paste/cut/selectAll", %{platform: platform} do
@@ -445,6 +451,22 @@ defmodule DesktopWebview.E2ETest do
       _ ->
         assert {:error, %{"code" => -32601, "message" => "Unknown test method"}} =
                  Transport.call("test.menu.list", %{})
+    end
+  end
+
+  defp restore_transport do
+    case Process.whereis(Transport) do
+      pid when is_pid(pid) ->
+        if Process.alive?(pid) do
+          :ok
+        else
+          {:ok, _} = Transport.start_link([])
+          :ok
+        end
+
+      nil ->
+        {:ok, _} = Transport.start_link([])
+        :ok
     end
   end
 
