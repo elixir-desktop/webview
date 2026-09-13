@@ -46,7 +46,10 @@ jobs:
       - name: Ad-hoc sign
         run: codesign -s - --force --deep priv/native/macos/DesktopWebView || true
       - run: mix deps.get
-      - run: mix test
+      - name: Tests
+        run: |
+          mix test --exclude menu_crash
+          mix test --only menu_crash
         env:
           DESKTOP_WEBVIEW_BINARY: ${{ github.workspace }}/priv/native/macos/DesktopWebView
 
@@ -78,7 +81,9 @@ jobs:
         run: ./scripts/build_linux.sh
       - run: mix deps.get
       - name: E2E under Xvfb
-        run: dbus-run-session -- xvfb-run -a mix test
+        run: |
+          dbus-run-session -- xvfb-run -a mix test --exclude menu_crash
+          dbus-run-session -- xvfb-run -a mix test --only menu_crash
         env:
           DESKTOP_WEBVIEW_BINARY: ${{ github.workspace }}/priv/native/linux/DesktopWebView
           WEBKIT_DISABLE_COMPOSITING_MODE: "1"
@@ -108,7 +113,9 @@ jobs:
       - run: mix deps.get
       - name: E2E
         shell: pwsh
-        run: mix test
+        run: |
+          mix test --exclude menu_crash
+          mix test --only menu_crash
         env:
           DESKTOP_WEBVIEW_BINARY: ${{ github.workspace }}\priv\native\windows\DesktopWebView.exe
           WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: --disable-gpu --disable-gpu-compositing

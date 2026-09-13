@@ -356,6 +356,65 @@ defmodule DesktopWebview.E2ETest do
     assert length(list) >= 2
   end
 
+  defmodule IconMenu do
+    use Desktop.Menu, server: false
+
+    def mount(menu), do: {:ok, menu}
+    def handle_event(_event, menu), do: {:noreply, menu}
+    def handle_info(_msg, menu), do: {:noreply, menu}
+
+    def render(assigns) do
+      ~H"""
+      <menu>
+        <item onclick="quit">Quit</item>
+      </menu>
+      """
+    end
+  end
+
+  @tag :menu_crash
+  test "menu process crash destroys native tray" do
+    assert {:ok, %{"icon_id" => iid}} = Transport.call("icon.create", %{})
+
+    # Own EventBridge from this process so Menu exit does not take it down.
+    DesktopWebview.EventBridge.ensure_started()
+
+    test = self()
+
+    parent =
+      spawn(fn ->
+        {:ok, pid} =
+          Desktop.Menu.start_link(
+            module: IconMenu,
+            adapter: DesktopWebview.Menu.Adapter,
+            wx: {:taskbar, {:icon, iid}}
+          )
+
+        send(test, {:menu, pid})
+
+        receive do
+          :crash -> exit(:crash)
+        end
+      end)
+
+    assert_receive {:menu, menu}, 2000
+    assert Process.alive?(menu)
+
+    assert {:ok, trays} = Transport.call("test.tray.list", %{})
+    assert Enum.any?(trays, &is_binary(&1["tray_id"]))
+
+    ref = Process.monitor(menu)
+
+    ExUnit.CaptureLog.capture_log(fn ->
+      send(parent, :crash)
+      assert_receive {:DOWN, ^ref, :process, ^menu, :crash}, 2000
+    end)
+
+    assert {:ok, []} = Transport.call("test.tray.list", %{})
+
+    restore_transport()
+  end
+
   test "default edit menu is installed with copy/paste/cut/selectAll", %{platform: platform} do
     # The macOS host installs a default Edit submenu and exposes it via
     # test.menu.list. The Linux host uses GTK menu bars and does not yet
@@ -392,6 +451,22 @@ defmodule DesktopWebview.E2ETest do
       _ ->
         assert {:error, %{"code" => -32601, "message" => "Unknown test method"}} =
                  Transport.call("test.menu.list", %{})
+    end
+  end
+
+  defp restore_transport do
+    case Process.whereis(Transport) do
+      pid when is_pid(pid) ->
+        if Process.alive?(pid) do
+          :ok
+        else
+          {:ok, _} = Transport.start_link([])
+          :ok
+        end
+
+      nil ->
+        {:ok, _} = Transport.start_link([])
+        :ok
     end
   end
 
