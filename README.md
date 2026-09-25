@@ -1,5 +1,7 @@
 # desktop_webview
 
+> **No human commits are accepted in this project. Only agent code.**
+
 Native desktop webview host for [elixir-desktop](https://github.com/elixir-desktop/desktop).
 
 The host is a stand-alone native binary per platform. It listens on localhost TCP and
@@ -52,6 +54,29 @@ MyApp.app/
 
 Host flags use the `--edw-*` prefix; all other argv is forwarded to the BEAM app.
 See [docs/packaging.md](docs/packaging.md).
+
+## Agent development
+
+Implementation is done by agents. Humans file the task and review the pull request; they do not land implementation commits.
+
+Four workflows are in use:
+
+| Workflow | Where it starts | What it produces |
+|----------|-----------------|------------------|
+| Cloud implementation | Cursor web or CLI cloud agent | Code on a `cursor/<description>-<suffix>` branch, commits, and a draft pull request |
+| Bugbot fix | “Fix in Web” from a review comment on an open pull request | A follow-up commit on that pull request’s existing branch |
+| Desktop plan | Cursor desktop, asked for a plan | An implementation plan only. No branch and no commits |
+| Explore | Spawned by a parent agent | A read-only report. No branch and no commits |
+
+Cloud implementation follows [AGENTS.md](AGENTS.md):
+
+1. Read `AGENTS.md` and the docs the change touches (`docs/protocol.md`, packaging, porting, status).
+2. Branch from the current base as `cursor/<description>-<suffix>`.
+3. Change the protocol doc and both sides (Elixir and the native host) in the same change. Production methods do not depend on `test.*`.
+4. Prove behavior with the shared Elixir suite: `mix test` for units, and `mix test.e2e` (or the platform job in [`.github/workflows/ci.yml`](.github/workflows/ci.yml)) against a built host. Mark a status-matrix row `done` only after that E2E covers it.
+5. Commit, push, and open a draft pull request. Watch CI (Elixir unit, plus macOS, Linux, and Windows host E2E) and push follow-up commits until it is green.
+
+Bugbot fix uses the same rules on the branch that is already under review. Desktop plan and Explore stop before any commit.
 
 ## Documentation
 
