@@ -57,9 +57,7 @@ See [docs/packaging.md](docs/packaging.md).
 
 ## Agent development
 
-Implementation is done by Cursor agents. A commit is accepted only when it is
-agent-authored (`Cursor Agent <cursoragent@cursor.com>`). Humans file the task
-and review the pull request; they do not land implementation commits.
+Implementation is done by agents. Humans file the task and review the pull request; they do not land implementation commits.
 
 Four workflows are in use:
 
