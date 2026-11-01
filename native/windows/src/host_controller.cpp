@@ -388,6 +388,7 @@ void HostController::spawn_beam() {
   bool is_batch = lower_script.size() >= 4 && (lower_script.substr(lower_script.size() - 4) == ".bat" ||
                                                lower_script.substr(lower_script.size() - 4) == ".cmd");
 
+  bool pass_launch_args = !forwarded_launch_args_;
   std::ostringstream cmd;
   if (is_batch) {
     // cmd.exe /c keeps quotes only for a single quoted executable. A second
@@ -418,7 +419,9 @@ void HostController::spawn_beam() {
   } else {
     cmd << '"' << script << '"';
     for (auto& a : config_.beam_args) cmd << ' ' << a;
-    for (auto& a : config_.forwarded_argv) cmd << ' ' << a;
+    if (pass_launch_args) {
+      for (auto& a : config_.forwarded_argv) cmd << ' ' << a;
+    }
   }
   std::string cmdline = cmd.str();
 
@@ -433,8 +436,12 @@ void HostController::spawn_beam() {
     }
     FreeEnvironmentStringsW(strings);
   }
-  for (size_t i = 0; i < config_.forwarded_argv.size() && i < 4; i++) {
-    env["EDW_ARG_" + std::to_string(i + 1)] = config_.forwarded_argv[i];
+  if (pass_launch_args) {
+    for (size_t i = 0; i < config_.forwarded_argv.size() && i < 4; i++) {
+      env["EDW_ARG_" + std::to_string(i + 1)] = config_.forwarded_argv[i];
+    }
+  } else {
+    for (int i = 1; i <= 4; i++) env.erase("EDW_ARG_" + std::to_string(i));
   }
   env["EDW_PORT"] = std::to_string(server_.port());
   env["EDW_HOST"] = config_.host;
@@ -476,6 +483,7 @@ void HostController::spawn_beam() {
   }
   CloseHandle(pi.hThread);
   beam_process_ = pi.hProcess;
+  forwarded_launch_args_ = true;
   watch_beam_process();
 }
 

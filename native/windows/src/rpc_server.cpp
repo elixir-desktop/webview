@@ -120,6 +120,7 @@ void RpcServer::accept_client() {
   client_sock_ = s;
   buffer_.clear();
   WSAAsyncSelect(client_sock_, notify_hwnd_, WM_EDW_SOCKET, FD_READ | FD_CLOSE);
+  flush_queued();
 }
 
 void RpcServer::on_readable() {
@@ -205,7 +206,18 @@ void RpcServer::send_json(jsonutil::Json node) {
 }
 
 void RpcServer::notify(const std::string& method, jsonutil::Json params) {
-  send_json(jsonutil::rpc_notification(method, std::move(params)));
+  std::string raw = jsonutil::stringify(jsonutil::rpc_notification(method, std::move(params)));
+  if (client_sock_ == INVALID_SOCKET) {
+    if (queued_.size() < 32) queued_.push_back(std::move(raw));
+    return;
+  }
+  send_raw(raw);
+}
+
+void RpcServer::flush_queued() {
+  auto queued = std::move(queued_);
+  queued_.clear();
+  for (auto& raw : queued) send_raw(raw);
 }
 
 void RpcServer::request(const std::string& method, jsonutil::Json params, PendingCallback cb) {

@@ -43,11 +43,13 @@ class RpcServer {
   void drain();
   void handle_payload(const std::string& payload);
   void send_raw(const std::string& json);
+  void flush_queued();
 
   HWND notify_hwnd_ = nullptr;
   SOCKET listen_sock_ = INVALID_SOCKET;
   SOCKET client_sock_ = INVALID_SOCKET;
   std::vector<uint8_t> buffer_;
+  std::vector<std::string> queued_;
   uint16_t port_ = 0;
   int next_outbound_id_ = 1;
   std::map<std::string, PendingCallback> pending_;
