@@ -9,6 +9,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <initializer_list>
+#include <fstream>
 #include <sstream>
 #include <vector>
 
@@ -389,13 +390,35 @@ void HostController::spawn_beam() {
 
   std::ostringstream cmd;
   if (is_batch) {
-    // CreateProcess cannot launch .bat directly; go through cmd.exe.
-    cmd << "cmd.exe /c \"" << script << "\"";
+    // cmd.exe /c keeps quotes only for a single quoted executable. A second
+    // quoted argument (start, or a ddrive:// query containing &) makes cmd
+    // strip the first and last quote and the batch path is no longer a command.
+    // Recovery already avoids that by launching one temp .cmd. Do the same here.
+    char tmp_dir[MAX_PATH];
+    char tmp_file[MAX_PATH];
+    if (!GetTempPathA(MAX_PATH, tmp_dir) || !GetTempFileNameA(tmp_dir, "edw", 0, tmp_file)) {
+      fprintf(stderr, "edw: failed to create beam cmd file\n");
+      return;
+    }
+    std::string cmd_path = std::string(tmp_file) + ".cmd";
+    DeleteFileA(tmp_file);
+    {
+      std::ofstream out(cmd_path, std::ios::binary);
+      if (!out) {
+        fprintf(stderr, "edw: failed to write beam cmd file\n");
+        return;
+      }
+      out << "@echo off\r\ncall " << quote_cmd_arg(script);
+      for (auto& a : config_.beam_args) out << ' ' << quote_cmd_arg(a);
+      for (auto& a : config_.forwarded_argv) out << ' ' << quote_cmd_arg(a);
+      out << "\r\n";
+    }
+    cmd << "cmd.exe /c \"" << cmd_path << "\"";
   } else {
     cmd << '"' << script << '"';
+    for (auto& a : config_.beam_args) cmd << ' ' << a;
+    for (auto& a : config_.forwarded_argv) cmd << ' ' << a;
   }
-  for (auto& a : config_.beam_args) cmd << ' ' << quote_cmd_arg(a);
-  for (auto& a : config_.forwarded_argv) cmd << ' ' << quote_cmd_arg(a);
   std::string cmdline = cmd.str();
 
   // Build environment block
