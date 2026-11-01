@@ -29,6 +29,20 @@ struct EvalMsg {
   std::function<void(bool, std::string)> done;
 };
 
+// cmd.exe splits on & | < > outside quotes. Quote each argument so a
+// ddrive:// query stays one argument. Embedded quotes are doubled.
+std::string quote_cmd_arg(const std::string& arg) {
+  std::string out;
+  out.reserve(arg.size() + 2);
+  out.push_back('"');
+  for (char c : arg) {
+    if (c == '"') out.push_back('"');
+    out.push_back(c);
+  }
+  out.push_back('"');
+  return out;
+}
+
 bool looks_like_scheme(const std::string& s) {
   auto colon = s.find(':');
   if (colon == std::string::npos || colon == 0) return false;
@@ -380,8 +394,8 @@ void HostController::spawn_beam() {
   } else {
     cmd << '"' << script << '"';
   }
-  for (auto& a : config_.beam_args) cmd << ' ' << a;
-  for (auto& a : config_.forwarded_argv) cmd << ' ' << a;
+  for (auto& a : config_.beam_args) cmd << ' ' << quote_cmd_arg(a);
+  for (auto& a : config_.forwarded_argv) cmd << ' ' << quote_cmd_arg(a);
   std::string cmdline = cmd.str();
 
   // Build environment block
