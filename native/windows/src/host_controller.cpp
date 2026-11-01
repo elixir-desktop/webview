@@ -408,9 +408,10 @@ void HostController::spawn_beam() {
         fprintf(stderr, "edw: failed to write beam cmd file\n");
         return;
       }
+      // Forwarded URLs go through the environment, not this file. A % in the
+      // file would be expanded by cmd, and the file would keep the link on disk.
       out << "@echo off\r\ncall " << quote_cmd_arg(script);
       for (auto& a : config_.beam_args) out << ' ' << quote_cmd_arg(a);
-      for (auto& a : config_.forwarded_argv) out << ' ' << quote_cmd_arg(a);
       out << "\r\n";
     }
     cmd << "cmd.exe /c \"" << cmd_path << "\"";
@@ -431,6 +432,9 @@ void HostController::spawn_beam() {
       if (eq != std::string::npos) env[entry.substr(0, eq)] = entry.substr(eq + 1);
     }
     FreeEnvironmentStringsW(strings);
+  }
+  for (size_t i = 0; i < config_.forwarded_argv.size() && i < 4; i++) {
+    env["EDW_ARG_" + std::to_string(i + 1)] = config_.forwarded_argv[i];
   }
   env["EDW_PORT"] = std::to_string(server_.port());
   env["EDW_HOST"] = config_.host;
