@@ -9,6 +9,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <initializer_list>
+#include <fstream>
 #include <sstream>
 #include <vector>
 
@@ -28,6 +29,20 @@ struct EvalMsg {
   std::string expr;
   std::function<void(bool, std::string)> done;
 };
+
+// cmd.exe splits on & | < > outside quotes. Quote each argument so a
+// ddrive:// query stays one argument. Embedded quotes are doubled.
+std::string quote_cmd_arg(const std::string& arg) {
+  std::string out;
+  out.reserve(arg.size() + 2);
+  out.push_back('"');
+  for (char c : arg) {
+    if (c == '"') out.push_back('"');
+    out.push_back(c);
+  }
+  out.push_back('"');
+  return out;
+}
 
 bool looks_like_scheme(const std::string& s) {
   auto colon = s.find(':');
@@ -375,13 +390,36 @@ void HostController::spawn_beam() {
 
   std::ostringstream cmd;
   if (is_batch) {
-    // CreateProcess cannot launch .bat directly; go through cmd.exe.
-    cmd << "cmd.exe /c \"" << script << "\"";
+    // cmd.exe /c keeps quotes only for a single quoted executable. A second
+    // quoted argument (start, or a ddrive:// query containing &) makes cmd
+    // strip the first and last quote and the batch path is no longer a command.
+    // Recovery already avoids that by launching one temp .cmd. Do the same here.
+    char tmp_dir[MAX_PATH];
+    char tmp_file[MAX_PATH];
+    if (!GetTempPathA(MAX_PATH, tmp_dir) || !GetTempFileNameA(tmp_dir, "edw", 0, tmp_file)) {
+      fprintf(stderr, "edw: failed to create beam cmd file\n");
+      return;
+    }
+    std::string cmd_path = std::string(tmp_file) + ".cmd";
+    DeleteFileA(tmp_file);
+    {
+      std::ofstream out(cmd_path, std::ios::binary);
+      if (!out) {
+        fprintf(stderr, "edw: failed to write beam cmd file\n");
+        return;
+      }
+      // Forwarded URLs go through the environment, not this file. A % in the
+      // file would be expanded by cmd, and the file would keep the link on disk.
+      out << "@echo off\r\ncall " << quote_cmd_arg(script);
+      for (auto& a : config_.beam_args) out << ' ' << quote_cmd_arg(a);
+      out << "\r\n";
+    }
+    cmd << "cmd.exe /c \"" << cmd_path << "\"";
   } else {
     cmd << '"' << script << '"';
+    for (auto& a : config_.beam_args) cmd << ' ' << a;
+    for (auto& a : config_.forwarded_argv) cmd << ' ' << a;
   }
-  for (auto& a : config_.beam_args) cmd << ' ' << a;
-  for (auto& a : config_.forwarded_argv) cmd << ' ' << a;
   std::string cmdline = cmd.str();
 
   // Build environment block
@@ -394,6 +432,9 @@ void HostController::spawn_beam() {
       if (eq != std::string::npos) env[entry.substr(0, eq)] = entry.substr(eq + 1);
     }
     FreeEnvironmentStringsW(strings);
+  }
+  for (size_t i = 0; i < config_.forwarded_argv.size() && i < 4; i++) {
+    env["EDW_ARG_" + std::to_string(i + 1)] = config_.forwarded_argv[i];
   }
   env["EDW_PORT"] = std::to_string(server_.port());
   env["EDW_HOST"] = config_.host;
