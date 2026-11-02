@@ -94,6 +94,12 @@ section disagree, **fix the host** and keep this section as the contract.
 
 - After TCP accept, the first production call MUST be `initialize`. Other methods
   → `-32001`.
+- The client waits synchronously for that `initialize` result and discards any
+  other frame until it arrives (`Transport.connect/2`). The host MUST NOT write
+  notifications on the new connection before the successful result. Notifications
+  retained while the client is not ready (no socket, or accepted but `initialize`
+  has not finished) MUST be written only after that result, so a protocol URL
+  queued while BEAM is down is not consumed by the handshake.
 - When the RPC client goes away, or a host-owned BEAM process exits, the host
   MUST destroy all **session** resources before a new client runs: trays,
   windows, webviews, menus, icons, notifications, and permission policy.
