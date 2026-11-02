@@ -43,11 +43,21 @@ class RpcServer {
   void drain();
   void handle_payload(const std::string& payload);
   void send_raw(const std::string& json);
+  void flush_queued();
 
   HWND notify_hwnd_ = nullptr;
   SOCKET listen_sock_ = INVALID_SOCKET;
   SOCKET client_sock_ = INVALID_SOCKET;
   std::vector<uint8_t> buffer_;
+  // Notifications produced with no ready client. Flushed only after the
+  // successful initialize result is on the wire.
+  std::vector<std::string> queued_;
+  // True only after this connection's initialize result has been written.
+  // TCP accept alone is not enough: Transport.connect/2 drops other frames.
+  bool client_ready_ = false;
+  // Bumped on accept and on close so a deferred initialize reply cannot mark
+  // a replacement socket ready or flush the queue onto it.
+  uint64_t conn_generation_ = 0;
   uint16_t port_ = 0;
   int next_outbound_id_ = 1;
   std::map<std::string, PendingCallback> pending_;

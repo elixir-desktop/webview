@@ -49,7 +49,9 @@ defmodule DesktopWebview.EventBridge do
      %{
        windows: %{},
        menus: %{},
-       notifications: %{}
+       notifications: %{},
+       pending_open: [],
+       open_wait: 0
      }}
   end
 
@@ -72,6 +74,10 @@ defmodule DesktopWebview.EventBridge do
   @impl true
   def handle_info({:edw_event, method, params}, state) do
     {:noreply, dispatch(method, params, state)}
+  end
+
+  def handle_info(:flush_open_urls, state) do
+    {:noreply, flush_open_urls(state)}
   end
 
   def handle_info({:DOWN, _ref, :process, pid, _}, state) do
@@ -97,13 +103,32 @@ defmodule DesktopWebview.EventBridge do
   end
 
   defp dispatch("event.system.open_url", params, state) do
-    url = params["url"] || params["path"]
+    enqueue_open_url(state, params["url"] || params["path"])
+  end
 
-    if is_binary(url) and Process.whereis(Desktop.Env) do
-      Desktop.Env.notify_subscribers({:open_url, [url]})
+  defp enqueue_open_url(state, url) when is_binary(url) do
+    state = %{state | pending_open: state.pending_open ++ [url], open_wait: 0}
+    flush_open_urls(state)
+  end
+
+  defp enqueue_open_url(state, _url), do: state
+
+  defp flush_open_urls(%{pending_open: []} = state), do: state
+
+  defp flush_open_urls(state) do
+    if Process.whereis(Desktop.Env) do
+      Enum.each(state.pending_open, fn url ->
+        Desktop.Env.notify_subscribers({:open_url, [url]})
+      end)
+
+      %{state | pending_open: [], open_wait: 0}
+    else
+      if state.open_wait < 200 do
+        Process.send_after(self(), :flush_open_urls, 50)
+      end
+
+      %{state | open_wait: state.open_wait + 1}
     end
-
-    state
   end
 
   defp dispatch("event.system.open_file", params, state) do

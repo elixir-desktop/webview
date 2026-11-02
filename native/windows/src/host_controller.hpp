@@ -117,4 +117,5 @@ class HostController {
   std::map<std::string, std::map<std::string, std::string>> permission_policy_;
   HANDLE beam_process_ = nullptr;
   HANDLE beam_wait_ = nullptr;
+  bool forwarded_launch_args_ = false;
 };

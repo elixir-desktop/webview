@@ -119,6 +119,12 @@ void RpcServer::accept_client() {
   }
   client_sock_ = s;
   buffer_.clear();
+  // Accept is not initialize. Elixir is still inside Transport.connect/2
+  // (recv_result/3) and discards any frame that is not the initialize reply.
+  // A protocol URL queued while BEAM was down must stay queued until that
+  // reply is written, or EventBridge never sees it.
+  client_ready_ = false;
+  conn_generation_++;
   WSAAsyncSelect(client_sock_, notify_hwnd_, WM_EDW_SOCKET, FD_READ | FD_CLOSE);
 }
 
@@ -180,7 +186,21 @@ void RpcServer::handle_payload(const std::string& payload) {
     auto id = root["id"];
     jsonutil::Json params = root.contains("params") ? root["params"] : jsonutil::Json();
     if (on_request_) {
-      on_request_(id, method, params, [this](jsonutil::Json response) { send_json(std::move(response)); });
+      uint64_t generation = conn_generation_;
+      on_request_(id, method, params, [this, method, generation](jsonutil::Json response) {
+        // The reply is posted back to the UI thread. If this socket was closed
+        // or replaced, do not write the old result onto the new client.
+        if (generation != conn_generation_ || client_sock_ == INVALID_SOCKET) return;
+        // Write the initialize result before any held notification. recv_result/3
+        // keeps only the frame whose id matches that call.
+        bool initialize_ok =
+            method == "initialize" && response.is_object() && response.contains("result");
+        send_json(std::move(response));
+        if (initialize_ok) {
+          client_ready_ = true;
+          flush_queued();
+        }
+      });
     }
     return;
   }
@@ -205,7 +225,21 @@ void RpcServer::send_json(jsonutil::Json node) {
 }
 
 void RpcServer::notify(const std::string& method, jsonutil::Json params) {
-  send_json(jsonutil::rpc_notification(method, std::move(params)));
+  std::string raw = jsonutil::stringify(jsonutil::rpc_notification(method, std::move(params)));
+  // A connected socket that has not finished initialize cannot take events.
+  // Sending now races the handshake and the frame is discarded.
+  if (client_sock_ == INVALID_SOCKET || !client_ready_) {
+    if (queued_.size() < 32) queued_.push_back(std::move(raw));
+    return;
+  }
+  send_raw(raw);
+}
+
+void RpcServer::flush_queued() {
+  if (!client_ready_ || client_sock_ == INVALID_SOCKET) return;
+  auto queued = std::move(queued_);
+  queued_.clear();
+  for (auto& raw : queued) send_raw(raw);
 }
 
 void RpcServer::request(const std::string& method, jsonutil::Json params, PendingCallback cb) {
@@ -238,6 +272,8 @@ void RpcServer::send_raw(const std::string& json) {
 }
 
 void RpcServer::close_connection() {
+  client_ready_ = false;
+  conn_generation_++;
   if (client_sock_ != INVALID_SOCKET) {
     closesocket(client_sock_);
     client_sock_ = INVALID_SOCKET;
