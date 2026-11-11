@@ -229,11 +229,19 @@ defmodule DesktopWebview.BeamFixture do
 
       _ ->
         # pgrep -P works on both Linux and macOS; GNU `ps --ppid` does not.
+        # Kill the whole tree: stay_up stubs are `sh` with a `sleep` grandchild.
         {out, _} =
           System.cmd("pgrep", ["-P", Integer.to_string(parent_pid)], stderr_to_stdout: true)
 
         for pid <- String.split(out, "\n", trim: true) do
-          System.cmd("kill", ["-9", String.trim(pid)], stderr_to_stdout: true)
+          child = String.trim(pid)
+          {grand, _} = System.cmd("pgrep", ["-P", child], stderr_to_stdout: true)
+
+          for gpid <- String.split(grand, "\n", trim: true) do
+            System.cmd("kill", ["-9", String.trim(gpid)], stderr_to_stdout: true)
+          end
+
+          System.cmd("kill", ["-9", child], stderr_to_stdout: true)
         end
 
         :ok

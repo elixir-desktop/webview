@@ -312,7 +312,13 @@ final class HostController: NSObject, UNUserNotificationCenterDelegate {
     }
 
     private func checkBeamLiveness() {
-        guard beamProcess != nil, !quitRequested else { return }
+        // prepare_quit arms quitRequested with a time window; if BEAM stays up
+        // past the window, clear it so a later crash can still respawn.
+        if quitRequested, !cleanExitExpected(), beamChildAlive() {
+            quitRequested = false
+            expectedBeamExitUntil = nil
+        }
+        guard beamProcess != nil else { return }
         if !beamChildAlive() {
             beamDidExit()
         }
@@ -352,9 +358,9 @@ final class HostController: NSObject, UNUserNotificationCenterDelegate {
         restartTimer?.cancel()
         restartTimer = nil
         if clean {
-            // Clean quit must release the single-instance lock.
-            finishQuit()
-            return
+            // Exit immediately so AppKit terminate/suppressTerminate cannot
+            // leave a single-instance host alive after prepare_quit.
+            exit(0)
         }
         if !config.restartBeam {
             return
@@ -627,6 +633,7 @@ final class HostController: NSObject, UNUserNotificationCenterDelegate {
         case "system.prepare_quit":
             // Elixir is about to halt. Open a short clean-exit window; do not
             // permanently disable respawn if BEAM somehow keeps running.
+            quitRequested = true
             markPrepareQuitWindow()
             return .bool(true)
         case "system.set_permission_policy":

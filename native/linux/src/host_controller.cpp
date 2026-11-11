@@ -311,7 +311,13 @@ void HostController::stop_liveness_timer() {
 }
 
 void HostController::check_beam_liveness() {
-  if (beam_pid_ <= 0 || quit_initiated_) return;
+  // prepare_quit arms quit_initiated_ with a time window; if BEAM stays up
+  // past the window, clear it so a later crash can still respawn.
+  if (quit_initiated_ && !clean_exit_expected() && beam_child_alive()) {
+    quit_initiated_ = false;
+    expected_beam_exit_until_us_ = 0;
+  }
+  if (beam_pid_ <= 0) return;
   if (!beam_child_alive()) {
     beam_did_exit();
   }
@@ -1090,6 +1096,7 @@ JsonNode* HostController::dispatch(const std::string& method, JsonNode* params) 
   if (method == "system.prepare_quit") {
     // Elixir signals a clean shutdown. Open a short window so the next BEAM
     // exit does not respawn; the host then exits itself.
+    quit_initiated_ = true;
     mark_prepare_quit_window();
     return jsonutil::bool_node(true);
   }

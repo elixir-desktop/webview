@@ -176,6 +176,26 @@ defmodule DesktopWebview.E2E.RestartTest do
     assert BeamFixture.count_lines(Path.join(root, "starts.log")) == before
   end
 
+  defp host_alive?(%{os_pid: os_pid}) when is_integer(os_pid) do
+    case :os.type() do
+      {:win32, _} ->
+        {out, _} =
+          System.cmd(
+            "tasklist",
+            ["/FI", "PID eq #{os_pid}", "/NH"],
+            stderr_to_stdout: true
+          )
+
+        String.contains?(out, Integer.to_string(os_pid))
+
+      _ ->
+        {_out, status} =
+          System.cmd("kill", ["-0", Integer.to_string(os_pid)], stderr_to_stdout: true)
+
+        status == 0
+    end
+  end
+
   defp host_alive?(%{port: port}) do
     match?([_ | _], Port.info(port))
   end

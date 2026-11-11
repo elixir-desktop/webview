@@ -300,7 +300,13 @@ void HostController::stop_liveness_timer() {
 }
 
 void HostController::check_beam_liveness() {
-  if (!beam_process_ || quit_initiated_) return;
+  // prepare_quit arms quit_initiated_ with a time window; if BEAM stays up
+  // past the window, clear it so a later crash can still respawn.
+  if (quit_initiated_ && !clean_exit_expected() && beam_child_alive()) {
+    quit_initiated_ = false;
+    expected_beam_exit_until_ = 0;
+  }
+  if (!beam_process_) return;
   if (WaitForSingleObject(beam_process_, 0) == WAIT_OBJECT_0) {
     beam_did_exit();
   }
@@ -1130,6 +1136,7 @@ jsonutil::Json HostController::dispatch(const std::string& method, const jsonuti
   if (method == "system.prepare_quit") {
     // Elixir is about to exit intentionally. Open a short clean-exit window so
     // the forthcoming BEAM exit does not respawn; the host then exits itself.
+    quit_initiated_ = true;
     mark_prepare_quit_window();
     return true;
   }
