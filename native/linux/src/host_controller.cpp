@@ -47,9 +47,15 @@ JsonObject* params_obj(JsonNode* params) {
 HostController::HostController(HostConfig config) : config_(std::move(config)) {}
 
 HostController::~HostController() {
+  quit_initiated_ = true;
+  stop_liveness_timer();
   if (restart_timer_id_ != 0) {
     g_source_remove(restart_timer_id_);
     restart_timer_id_ = 0;
+  }
+  if (beam_watch_id_ != 0) {
+    g_source_remove(beam_watch_id_);
+    beam_watch_id_ = 0;
   }
   if (beam_pid_ > 0) {
     kill(beam_pid_, SIGTERM);
@@ -227,27 +233,107 @@ void HostController::spawn_beam() {
   }
   // Watch the child; when BEAM exits, decide whether to respawn it (mirrors
   // the Swift HostController.terminationHandler path).
-  g_child_watch_add(beam_pid_,
-                    +[](GPid pid, gint /*status*/, gpointer user_data) -> void {
-                      auto* self = static_cast<HostController*>(user_data);
-                      self->beam_did_exit();
-                    },
-                    this);
+  if (beam_watch_id_ != 0) {
+    g_source_remove(beam_watch_id_);
+    beam_watch_id_ = 0;
+  }
+  beam_watch_id_ = g_child_watch_add(
+      beam_pid_,
+      +[](GPid /*pid*/, gint /*status*/, gpointer user_data) -> void {
+        auto* self = static_cast<HostController*>(user_data);
+        self->beam_watch_id_ = 0;
+        self->beam_did_exit();
+      },
+      this);
+  start_liveness_timer();
 }
 
-void HostController::beam_did_exit() {
-  bool was_initialized = initialized_;
-  reset_session();
-  beam_pid_ = 0;
+bool HostController::beam_child_alive() const {
+  if (beam_pid_ <= 0) return false;
+  return kill(beam_pid_, 0) == 0;
+}
+
+bool HostController::clean_exit_expected() const {
+  return expected_beam_exit_until_us_ != 0 &&
+         g_get_monotonic_time() <= expected_beam_exit_until_us_;
+}
+
+void HostController::mark_prepare_quit_window() {
+  expected_beam_exit_until_us_ = g_get_monotonic_time() + kPrepareQuitWindowUs;
+}
+
+void HostController::exit_host_clean() {
+  stop_liveness_timer();
   if (restart_timer_id_ != 0) {
     g_source_remove(restart_timer_id_);
     restart_timer_id_ = 0;
   }
-  if (quit_initiated_) {
-    return;
+  exit(0);
+}
+
+void HostController::start_liveness_timer() {
+  if (liveness_timer_id_ != 0) return;
+  liveness_timer_id_ = g_timeout_add(
+      kLivenessIntervalMs,
+      +[](gpointer user_data) -> gboolean {
+        auto* self = static_cast<HostController*>(user_data);
+        self->check_beam_liveness();
+        return G_SOURCE_CONTINUE;
+      },
+      this);
+}
+
+void HostController::stop_liveness_timer() {
+  if (liveness_timer_id_ == 0) return;
+  g_source_remove(liveness_timer_id_);
+  liveness_timer_id_ = 0;
+}
+
+void HostController::check_beam_liveness() {
+  if (beam_pid_ <= 0 || quit_initiated_) return;
+  if (!beam_child_alive()) {
+    beam_did_exit();
   }
-  if (expected_beam_exit_) {
-    expected_beam_exit_ = false;
+}
+
+void HostController::maybe_respawn_beam_for_activate() {
+  if (quit_initiated_ || clean_exit_expected()) return;
+  if (!config_.restart_beam || config_.no_beam || !config_.beam_enabled) return;
+  if (beam_child_alive()) return;
+  if (restart_timer_id_ != 0) {
+    g_source_remove(restart_timer_id_);
+    restart_timer_id_ = 0;
+  }
+  if (beam_pid_ > 0) {
+    beam_did_exit();
+    if (restart_timer_id_ != 0) {
+      g_source_remove(restart_timer_id_);
+      restart_timer_id_ = 0;
+    }
+  }
+  if (beam_pid_ <= 0) {
+    spawn_beam();
+  }
+}
+
+void HostController::beam_did_exit() {
+  if (beam_pid_ <= 0 && beam_watch_id_ == 0) return;
+  bool was_initialized = initialized_;
+  bool clean = quit_initiated_ || clean_exit_expected();
+  expected_beam_exit_until_us_ = 0;
+  stop_liveness_timer();
+  if (beam_watch_id_ != 0) {
+    g_source_remove(beam_watch_id_);
+    beam_watch_id_ = 0;
+  }
+  beam_pid_ = 0;
+  reset_session();
+  if (restart_timer_id_ != 0) {
+    g_source_remove(restart_timer_id_);
+    restart_timer_id_ = 0;
+  }
+  if (clean) {
+    exit_host_clean();
     return;
   }
   if (!config_.restart_beam) return;
@@ -311,6 +397,7 @@ void notify_object(RpcServer& server, const std::string& method, JsonObject* o) 
 }  // namespace
 
 void HostController::activate_from_argv(const std::vector<std::string>& argv) {
+  maybe_respawn_beam_for_activate();
   if (argv.empty()) {
     JsonObject* o = jsonutil::object_new();
     notify_object(server_, "event.system.reopen", o);
@@ -973,10 +1060,9 @@ JsonNode* HostController::dispatch(const std::string& method, JsonNode* params) 
     return jsonutil::string_node(desc);
   }
   if (method == "system.prepare_quit") {
-    // Elixir signals a clean shutdown. Mark so the next BEAM exit is not
-    // treated as a crash and does not trigger host-driven respawn.
-    quit_initiated_ = true;
-    expected_beam_exit_ = true;
+    // Elixir signals a clean shutdown. Open a short window so the next BEAM
+    // exit does not respawn; the host then exits itself.
+    mark_prepare_quit_window();
     return jsonutil::bool_node(true);
   }
   if (method == "system.set_permission_policy") {

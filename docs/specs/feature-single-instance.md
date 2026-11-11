@@ -134,6 +134,13 @@ each remaining argument (or once with an empty list):
 A Windows drive path (`C:\...`) is not a URL scheme. Raise / show existing
 native windows (same role as `Desktop.Window.show` in `do_focus`).
 
+**Dead BEAM child:** if the host still holds the lock but has no live BEAM
+child, quit is not in progress, and `restart_beam` is on, `instance.activate`
+must cancel any pending backoff and **spawn BEAM immediately**, then continue
+the argv actions above. Do not no-op on an empty window list — that leaves a
+zombie host that blocks relaunch. If the host is mid clean-quit, activate may
+return success while the host is exiting.
+
 ---
 
 ## Testing
@@ -157,4 +164,6 @@ row, AGENTS.md hard rule, status rows.
 
 ## Version History
 
+- **v0.2.0** - `instance.activate` respawns a dead BEAM child when
+  `restart_beam` is on.
 - **v0.1.0** - Initial specification

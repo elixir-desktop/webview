@@ -55,6 +55,14 @@ class HostController {
   void beam_did_exit();
   // Schedule a delayed respawn via glib main-loop timer.
   void schedule_beam_respawn();
+  void start_liveness_timer();
+  void stop_liveness_timer();
+  void check_beam_liveness();
+  bool beam_child_alive() const;
+  bool clean_exit_expected() const;
+  void mark_prepare_quit_window();
+  void exit_host_clean();
+  void maybe_respawn_beam_for_activate();
   std::string next_id(const std::string& prefix);
 
   void handle_request(JsonNode* id, const std::string& method, JsonNode* params,
@@ -97,9 +105,13 @@ class HostController {
   GPid beam_pid_ = 0;
   GtkApplication* app_ = nullptr;
   // Respawn bookkeeping (mirror of Swift HostController).
-  bool expected_beam_exit_ = false;
+  gint64 expected_beam_exit_until_us_ = 0;
   bool quit_initiated_ = false;
   int beam_restart_attempts_ = 0;
   int startup_failures_ = 0;
   guint restart_timer_id_ = 0;
+  guint liveness_timer_id_ = 0;
+  guint beam_watch_id_ = 0;
+  static constexpr guint kLivenessIntervalMs = 1000;
+  static constexpr gint64 kPrepareQuitWindowUs = 3 * G_TIME_SPAN_SECOND;
 };

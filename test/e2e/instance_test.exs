@@ -77,4 +77,52 @@ defmodule DesktopWebview.E2E.InstanceTest do
     BeamFixture.stop_host(first)
     BeamFixture.stop_host(second)
   end
+
+  test "activate respawns dead BEAM child" do
+    root = BeamFixture.tmp_dir("edw-activate-respawn")
+    instance_id = BeamFixture.unique_id("si-respawn")
+
+    fx =
+      BeamFixture.write_restart_fixture!(root,
+        stay_up: true,
+        instances: "single",
+        instance_id: instance_id
+      )
+
+    {:ok, launcher} =
+      Launcher.start(
+        no_beam: false,
+        test_rpc: false,
+        lifetime: :reconnect,
+        extra_args: ["--edw-config=#{fx.ini}", "--edw-instance-id=#{instance_id}"]
+      )
+
+    on_exit(fn ->
+      BeamFixture.stop_host(launcher)
+      File.rm_rf(root)
+    end)
+
+    assert BeamFixture.wait_until(fn ->
+             BeamFixture.count_lines(Path.join(root, "starts.log")) >= 1
+           end)
+
+    before = BeamFixture.count_lines(Path.join(root, "starts.log"))
+    BeamFixture.kill_direct_children!(launcher.os_pid)
+
+    {out, status} =
+      Launcher.oneshot([
+        "--edw-no-beam",
+        "--edw-config=#{fx.ini}",
+        "--edw-instance-id=#{instance_id}"
+      ])
+
+    assert status == 0, out
+
+    assert BeamFixture.wait_until(fn ->
+             BeamFixture.count_lines(Path.join(root, "starts.log")) > before
+           end),
+           "expected activate to respawn dead BEAM; starts=#{inspect(File.read(Path.join(root, "starts.log")))}"
+
+    assert match?([_ | _], Port.info(launcher.port))
+  end
 end

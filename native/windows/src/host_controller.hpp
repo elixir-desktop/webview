@@ -61,6 +61,14 @@ class HostController {
   void schedule_beam_respawn();
   void watch_beam_process();
   void clear_beam_watch();
+  void start_liveness_timer();
+  void stop_liveness_timer();
+  void check_beam_liveness();
+  bool beam_child_alive() const;
+  bool clean_exit_expected() const;
+  void mark_prepare_quit_window();
+  void exit_host_clean();
+  void maybe_respawn_beam_for_activate();
   std::string next_id(const std::string& prefix);
 
   void handle_request(jsonutil::Json id, const std::string& method, jsonutil::Json params,
@@ -103,12 +111,18 @@ class HostController {
   HWND hwnd_ = nullptr;
   bool initialized_ = false;
   bool quit_initiated_ = false;
-  bool expected_beam_exit_ = false;
+  // Tick count deadline for system.prepare_quit (0 = no window).
+  ULONGLONG expected_beam_exit_until_ = 0;
   int id_counter_ = 0;
   int beam_restart_attempts_ = 0;
   int startup_failures_ = 0;
   UINT next_menu_cmd_ = 1000;
   UINT_PTR respawn_timer_id_ = 0;
+  UINT_PTR liveness_timer_id_ = 0;
+  static constexpr UINT_PTR kRespawnTimerId = 1;
+  static constexpr UINT_PTR kLivenessTimerId = 2;
+  static constexpr DWORD kLivenessIntervalMs = 1000;
+  static constexpr ULONGLONG kPrepareQuitWindowMs = 3000;
   std::map<std::string, std::unique_ptr<WebWindow>> windows_;
   std::map<std::string, std::string> webviews_;
   std::map<std::string, MenuEntry> menus_;

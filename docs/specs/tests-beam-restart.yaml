@@ -41,3 +41,20 @@ beam_restart:
       start_failures: 3
       eval_count: 0
       host_exits: true
+
+  - name: "runtime kill of BEAM child respawns start"
+    input:
+      stay_up: true
+      kill_beam_after_start: true
+    output:
+      start_count_grows: true
+      host_stays_up: true
+
+  - name: "prepare_quit then BEAM exit terminates the host"
+    input:
+      stay_up: true
+      call_prepare_quit: true
+      kill_beam_after_prepare_quit: true
+    output:
+      host_exits: true
+      no_respawn_after_prepare_quit: true
