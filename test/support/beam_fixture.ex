@@ -163,6 +163,7 @@ defmodule DesktopWebview.BeamFixture do
 
   def write_restart_fixture!(root, opts \\ []) do
     always_fail? = Keyword.get(opts, :always_fail, false)
+    stay_up? = Keyword.get(opts, :stay_up, false)
     bin = Path.join(root, "bin")
     File.mkdir_p!(bin)
     script = Path.join(bin, "edw_beam")
@@ -178,10 +179,19 @@ defmodule DesktopWebview.BeamFixture do
     """)
 
     if always_fail?, do: File.write!(Path.join(root, "always_fail"), "1\n")
+    if stay_up?, do: File.write!(Path.join(root, "stay_up"), "1\n")
 
     ini = Path.join(root, "DesktopWebView.ini")
 
     extra_lifetime = Keyword.get(opts, :lifetime_ini, "")
+    instances = Keyword.get(opts, :instances, nil)
+
+    instances_ini =
+      if instances do
+        "instances = #{instances}\ninstance_id = #{Keyword.get(opts, :instance_id, "edw-restart")}\n"
+      else
+        ""
+      end
 
     File.write!(ini, """
     [beam]
@@ -194,10 +204,48 @@ defmodule DesktopWebview.BeamFixture do
     mode = reconnect
     restart_beam = true
     restart_backoff_ms = 50
-    #{extra_lifetime}
+    #{instances_ini}#{extra_lifetime}
     """)
 
     %{root: root, ini: ini, recovery: recovery, script: script}
+  end
+
+  def kill_direct_children!(parent_pid) when is_integer(parent_pid) do
+    case :os.type() do
+      {:win32, _} ->
+        ps = """
+        Get-CimInstance Win32_Process -Filter "ParentProcessId=#{parent_pid}" |
+          ForEach-Object { $_.ProcessId }
+        """
+
+        {out, _} =
+          System.cmd("powershell", ["-NoProfile", "-Command", ps], stderr_to_stdout: true)
+
+        for pid <- String.split(out, "\n", trim: true), pid != "" do
+          System.cmd("taskkill", ["/F", "/T", "/PID", String.trim(pid)], stderr_to_stdout: true)
+        end
+
+        :ok
+
+      _ ->
+        # pgrep -P works on both Linux and macOS; GNU `ps --ppid` does not.
+        # Kill the whole tree: stay_up stubs are `sh` with a `sleep` grandchild.
+        {out, _} =
+          System.cmd("pgrep", ["-P", Integer.to_string(parent_pid)], stderr_to_stdout: true)
+
+        for pid <- String.split(out, "\n", trim: true) do
+          child = String.trim(pid)
+          {grand, _} = System.cmd("pgrep", ["-P", child], stderr_to_stdout: true)
+
+          for gpid <- String.split(grand, "\n", trim: true) do
+            System.cmd("kill", ["-9", String.trim(gpid)], stderr_to_stdout: true)
+          end
+
+          System.cmd("kill", ["-9", child], stderr_to_stdout: true)
+        end
+
+        :ok
+    end
   end
 
   def count_lines(path) do
@@ -240,7 +288,7 @@ defmodule DesktopWebview.BeamFixture do
         if [ -f "$ROOT/always_fail" ]; then
           exit 1
         fi
-        if [ -f "$ROOT/recovered" ]; then
+        if [ -f "$ROOT/stay_up" ] || [ -f "$ROOT/recovered" ]; then
           while true; do sleep 3600; done
         fi
         exit 1
@@ -261,7 +309,7 @@ defmodule DesktopWebview.BeamFixture do
     """
     @echo off
     set ROOT=%~dp0..
-    echo cmd %*>> "%ROOT%\calls.log"
+    echo cmd %*>> "%ROOT%\\calls.log"
     if /I "%~1"=="eval" (
       echo eval %~2>> "%ROOT%\\eval.log"
       elixir -e "%~2"
@@ -269,11 +317,12 @@ defmodule DesktopWebview.BeamFixture do
     )
     echo start>> "%ROOT%\\starts.log"
     if exist "%ROOT%\\always_fail" exit /b 1
-    if exist "%ROOT%\\recovered" (
-      ping -n 3600 127.0.0.1 >nul
-      exit /b 0
-    )
+    if exist "%ROOT%\\stay_up" goto stay
+    if exist "%ROOT%\\recovered" goto stay
     exit /b 1
+    :stay
+    ping -n 3600 127.0.0.1 >nul
+    exit /b 0
     """
   end
 end

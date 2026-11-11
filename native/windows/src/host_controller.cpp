@@ -62,6 +62,7 @@ HostController::HostController(HostConfig config) : config_(std::move(config)) {
 
 HostController::~HostController() {
   quit_initiated_ = true;
+  stop_liveness_timer();
   if (respawn_timer_id_) {
     KillTimer(hwnd_, respawn_timer_id_);
     respawn_timer_id_ = 0;
@@ -170,12 +171,16 @@ LRESULT HostController::on_host_message(HWND hwnd, UINT msg, WPARAM wParam, LPAR
     }
     return 0;
   }
-  if (msg == WM_TIMER && wParam == 1) {
-    KillTimer(hwnd, 1);
+  if (msg == WM_TIMER && wParam == kRespawnTimerId) {
+    KillTimer(hwnd, kRespawnTimerId);
     respawn_timer_id_ = 0;
     if (config_.beam_enabled && !config_.no_beam) {
       spawn_beam();
     }
+    return 0;
+  }
+  if (msg == WM_TIMER && wParam == kLivenessTimerId) {
+    check_beam_liveness();
     return 0;
   }
   if (msg == WM_EDW_TRAY) {
@@ -261,21 +266,93 @@ void HostController::watch_beam_process() {
   beam_wait_ = wait;
 }
 
-void HostController::beam_did_exit() {
-  bool was_initialized = initialized_;
-  clear_beam_watch();
-  if (beam_process_) {
-    CloseHandle(beam_process_);
-    beam_process_ = nullptr;
+bool HostController::beam_child_alive() const {
+  if (!beam_process_) return false;
+  return WaitForSingleObject(beam_process_, 0) == WAIT_TIMEOUT;
+}
+
+bool HostController::clean_exit_expected() const {
+  return expected_beam_exit_until_ != 0 && GetTickCount64() <= expected_beam_exit_until_;
+}
+
+void HostController::mark_prepare_quit_window() {
+  expected_beam_exit_until_ = GetTickCount64() + kPrepareQuitWindowMs;
+}
+
+void HostController::exit_host_clean() {
+  stop_liveness_timer();
+  if (respawn_timer_id_) {
+    KillTimer(hwnd_, respawn_timer_id_);
+    respawn_timer_id_ = 0;
   }
+  PostQuitMessage(0);
+}
+
+void HostController::start_liveness_timer() {
+  if (!hwnd_ || liveness_timer_id_) return;
+  liveness_timer_id_ = SetTimer(hwnd_, kLivenessTimerId, kLivenessIntervalMs, nullptr);
+}
+
+void HostController::stop_liveness_timer() {
+  if (!liveness_timer_id_) return;
+  KillTimer(hwnd_, liveness_timer_id_);
+  liveness_timer_id_ = 0;
+}
+
+void HostController::check_beam_liveness() {
+  // prepare_quit arms quit_initiated_ with a time window; if BEAM stays up
+  // past the window, clear it so a later crash can still respawn.
+  if (quit_initiated_ && !clean_exit_expected() && beam_child_alive()) {
+    quit_initiated_ = false;
+    expected_beam_exit_until_ = 0;
+  }
+  if (!beam_process_) return;
+  if (WaitForSingleObject(beam_process_, 0) == WAIT_OBJECT_0) {
+    beam_did_exit();
+  }
+}
+
+void HostController::maybe_respawn_beam_for_activate() {
+  if (quit_initiated_ || clean_exit_expected()) return;
+  if (!config_.restart_beam || config_.no_beam || !config_.beam_enabled) return;
+  if (beam_child_alive()) return;
+  if (respawn_timer_id_) {
+    KillTimer(hwnd_, respawn_timer_id_);
+    respawn_timer_id_ = 0;
+  }
+  if (beam_process_) {
+    // Child handle is signaled but beam_did_exit has not run yet. Reuse that
+    // path so we do not double-close the process handle under nested messages.
+    beam_did_exit();
+    if (respawn_timer_id_) {
+      KillTimer(hwnd_, respawn_timer_id_);
+      respawn_timer_id_ = 0;
+    }
+  }
+  if (!beam_process_ && !beam_child_alive()) {
+    spawn_beam();
+  }
+}
+
+void HostController::beam_did_exit() {
+  if (!beam_process_) return;
+  // Activate respawn can reclaim a dead child and spawn a replacement before a
+  // previously posted WM_EDW_BEAM_EXIT is dispatched. Ignore that stale exit.
+  if (WaitForSingleObject(beam_process_, 0) != WAIT_OBJECT_0) return;
+  bool was_initialized = initialized_;
+  bool clean = quit_initiated_ || clean_exit_expected();
+  expected_beam_exit_until_ = 0;
+  stop_liveness_timer();
+  clear_beam_watch();
+  CloseHandle(beam_process_);
+  beam_process_ = nullptr;
   reset_session();
   if (respawn_timer_id_) {
     KillTimer(hwnd_, respawn_timer_id_);
     respawn_timer_id_ = 0;
   }
-  if (quit_initiated_) return;
-  if (expected_beam_exit_) {
-    expected_beam_exit_ = false;
+  if (clean) {
+    exit_host_clean();
     return;
   }
   if (!config_.restart_beam) return;
@@ -302,7 +379,7 @@ void HostController::schedule_beam_respawn() {
   int shift = (std::min)(beam_restart_attempts_ - 1, 4);
   uint32_t multiplier = static_cast<uint32_t>(1) << shift;
   uint32_t backoff = (std::min)(config_.restart_backoff_ms * multiplier, 5000u);
-  respawn_timer_id_ = SetTimer(hwnd_, 1, backoff, nullptr);
+  respawn_timer_id_ = SetTimer(hwnd_, kRespawnTimerId, backoff, nullptr);
   if (!respawn_timer_id_) {
     fprintf(stderr, "edw: SetTimer failed; respawning immediately\n");
     spawn_beam();
@@ -485,14 +562,20 @@ void HostController::spawn_beam() {
   beam_process_ = pi.hProcess;
   forwarded_launch_args_ = true;
   watch_beam_process();
+  start_liveness_timer();
 }
 
 void HostController::activate_from_argv(const std::vector<std::string>& argv) {
   if (hwnd_ && GetCurrentThreadId() != GetWindowThreadProcessId(hwnd_, nullptr)) {
     auto* heap = new std::vector<std::string>(argv);
-    SendMessageW(hwnd_, WM_EDW_INSTANCE_ACTIVATE, 0, reinterpret_cast<LPARAM>(heap));
+    // PostMessage (not SendMessage): the control-pipe thread must not block on
+    // the UI thread while spawn_beam / nested WM_EDW_BEAM_EXIT run.
+    if (!PostMessageW(hwnd_, WM_EDW_INSTANCE_ACTIVATE, 0, reinterpret_cast<LPARAM>(heap))) {
+      delete heap;
+    }
     return;
   }
+  maybe_respawn_beam_for_activate();
   if (argv.empty()) {
     server_.notify("event.system.reopen", jsonutil::Json::object());
   } else {
@@ -1051,10 +1134,10 @@ jsonutil::Json HostController::dispatch(const std::string& method, const jsonuti
   }
 
   if (method == "system.prepare_quit") {
-    // Elixir is about to exit intentionally (Updater restart or clean quit).
-    // Treat the forthcoming BEAM exit as expected so we do not respawn.
-    expected_beam_exit_ = true;
+    // Elixir is about to exit intentionally. Open a short clean-exit window so
+    // the forthcoming BEAM exit does not respawn; the host then exits itself.
     quit_initiated_ = true;
+    mark_prepare_quit_window();
     return true;
   }
 

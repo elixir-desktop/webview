@@ -86,8 +86,13 @@ child. Capture this **before** session reset (reset clears `initialized`).
 
 **Runtime crash:** child exits after a successful `initialize`.
 
-**Clean exit:** `system.prepare_quit` window, or host-initiated quit. Do not
-respawn.
+**Clean exit:** `system.prepare_quit` opens a short time window (about 3s), or
+the host initiated quit. Do **not** respawn. The host process **must exit** and
+release any single-instance lock so a later launch can bind.
+
+`system.prepare_quit` must **not** permanently disable respawn. If BEAM stays
+alive past the window and later exits unexpectedly, treat that as a runtime
+crash (respawn when `restart_beam`).
 
 On successful `initialize`: set `restart_attempts = 0` and
 `startup_failures = 0`.
@@ -106,6 +111,11 @@ Do not run recovery on runtime crashes (`initialize` already reset
 `startup_failures`).
 
 `recovery_after = 0` disables automatic recovery. `--edw-recover` still works.
+
+**Liveness fallback:** while a BEAM child should be alive, the host periodically
+checks that the child process still exists. If it is gone and no respawn is
+already scheduled and quit is not in progress, run the same unexpected-exit
+path (covers missed OS wait callbacks).
 
 ---
 
@@ -177,4 +187,6 @@ Packaging lifetime section, porting checklist, status matrix rows.
 
 ## Version History
 
+- **v0.2.0** - Clean quit exits the host; time-bounded `prepare_quit`; liveness
+  fallback for missed child-exit notifications.
 - **v0.1.0** - Initial specification

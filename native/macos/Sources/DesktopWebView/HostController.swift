@@ -38,9 +38,13 @@ final class HostController: NSObject, UNUserNotificationCenterDelegate {
     private var startupFailures: Int = 0
     /// Pending restart timer; cancelled if the host quits before it fires.
     private var restartTimer: DispatchSourceTimer? = nil
+    /// Periodic check that the BEAM child is still alive.
+    private var livenessTimer: DispatchSourceTimer? = nil
     /// When true, `applicationShouldTerminate` cancels so last-window teardown
     /// during session reset cannot quit the host (CI / `--edw-no-beam`).
     var suppressTerminate = false
+    private let prepareQuitWindowSeconds: TimeInterval = 3.0
+    private let livenessIntervalSeconds: TimeInterval = 1.0
 
     init(config: HostConfig) {
         self.config = config
@@ -108,6 +112,7 @@ final class HostController: NSObject, UNUserNotificationCenterDelegate {
     }
 
     func activateFromArgv(_ argv: [String]) {
+        maybeRespawnBeamForActivate()
         if argv.isEmpty {
             notifyReopen()
         } else {
@@ -219,9 +224,13 @@ final class HostController: NSObject, UNUserNotificationCenterDelegate {
     }
 
     func finishQuit() {
+        // resetSession() sets suppressTerminate; clear it so NSApp.terminate
+        // is not cancelled when clean BEAM exit finishes the host.
+        suppressTerminate = false
         readyToTerminate = true
         restartTimer?.cancel()
         restartTimer = nil
+        stopLivenessTimer()
         // Force the host-kills-BEAM path into the "do not respawn" branch.
         expectedBeamExitUntil = Date().addingTimeInterval(3.0)
         beamProcess?.terminate()
@@ -260,33 +269,98 @@ final class HostController: NSObject, UNUserNotificationCenterDelegate {
         } ?? beamDir
         proc.currentDirectoryURL = URL(fileURLWithPath: wd)
         proc.terminationHandler = { [weak self] _ in
-            DispatchQueue.main.async { self?.beamDidExit() }
+            DispatchQueue.main.async { self?.beamDidExit(for: proc) }
         }
         do {
             try proc.run()
             beamProcess = proc
+            startLivenessTimer()
         } catch {
             fputs("edw: failed to spawn beam: \(error)\n", stderr)
+        }
+    }
+
+    private func beamChildAlive() -> Bool {
+        guard let proc = beamProcess else { return false }
+        return proc.isRunning
+    }
+
+    private func cleanExitExpected() -> Bool {
+        guard let until = expectedBeamExitUntil else { return false }
+        return until > Date()
+    }
+
+    private func markPrepareQuitWindow() {
+        expectedBeamExitUntil = Date().addingTimeInterval(prepareQuitWindowSeconds)
+    }
+
+    private func startLivenessTimer() {
+        guard livenessTimer == nil else { return }
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.schedule(deadline: .now() + livenessIntervalSeconds,
+                       repeating: livenessIntervalSeconds)
+        timer.setEventHandler { [weak self] in
+            self?.checkBeamLiveness()
+        }
+        livenessTimer = timer
+        timer.resume()
+    }
+
+    private func stopLivenessTimer() {
+        livenessTimer?.cancel()
+        livenessTimer = nil
+    }
+
+    private func checkBeamLiveness() {
+        // prepare_quit arms quitRequested with a time window; if BEAM stays up
+        // past the window, clear it so a later crash can still respawn.
+        if quitRequested, !cleanExitExpected(), beamChildAlive() {
+            quitRequested = false
+            expectedBeamExitUntil = nil
+        }
+        guard beamProcess != nil else { return }
+        if !beamChildAlive() {
+            beamDidExit()
+        }
+    }
+
+    private func maybeRespawnBeamForActivate() {
+        if quitRequested || cleanExitExpected() { return }
+        guard config.restartBeam, config.beamEnabled, !config.noBeam else { return }
+        if beamChildAlive() { return }
+        restartTimer?.cancel()
+        restartTimer = nil
+        if beamProcess != nil {
+            beamDidExit()
+            restartTimer?.cancel()
+            restartTimer = nil
+        }
+        if beamProcess == nil {
+            spawnBeam()
         }
     }
 
     /// Handle BEAM exit while the host is still alive. Decide whether to respawn
     /// based on whether the exit looked intentional (`system.prepare_quit`)
     /// and whether we have a maximum-attempts budget left.
-    private func beamDidExit() {
+    private func beamDidExit(for exited: Process? = nil) {
+        guard let proc = beamProcess else { return }
+        // Stale terminationHandler after activate respawn: ignore if a newer
+        // child already replaced the exited process.
+        if let exited, exited !== proc { return }
+        if proc.isRunning { return }
         let wasInitialized = initialized
+        let clean = quitRequested || cleanExitExpected()
+        expectedBeamExitUntil = nil
+        stopLivenessTimer()
         resetSession()
         beamProcess = nil
         restartTimer?.cancel()
         restartTimer = nil
-        if quitRequested {
-            // Host initiated the quit; do not respawn.
-            return
-        }
-        if let until = expectedBeamExitUntil, until > Date() {
-            // Elixir sent `system.prepare_quit` and exited within the window.
-            // Treat as a clean shutdown.
-            return
+        if clean {
+            // Exit immediately so AppKit terminate/suppressTerminate cannot
+            // leave a single-instance host alive after prepare_quit.
+            exit(0)
         }
         if !config.restartBeam {
             return
@@ -557,10 +631,10 @@ final class HostController: NSObject, UNUserNotificationCenterDelegate {
             let v = ProcessInfo.processInfo.operatingSystemVersionString
             return .string("macOS \(v)")
         case "system.prepare_quit":
-            // Elixir is about to halt; mark so the upcoming BEAM exit is treated
-            // as a clean shutdown (no host-driven respawn).
+            // Elixir is about to halt. Open a short clean-exit window; do not
+            // permanently disable respawn if BEAM somehow keeps running.
             quitRequested = true
-            expectedBeamExitUntil = Date().addingTimeInterval(3.0)
+            markPrepareQuitWindow()
             return .bool(true)
         case "system.set_permission_policy":
             guard let origin = params?["origin"]?.stringValue else { throw HostError(-32602, "origin") }

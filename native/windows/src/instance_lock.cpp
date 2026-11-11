@@ -237,8 +237,10 @@ void InstanceLock::handle_client(HANDLE pipe) {
         if (v.is_string()) argv.push_back(v.get<std::string>());
       }
     }
-    if (activate_) activate_(argv);
+    // Reply before running activate so a slow/dead BEAM respawn cannot strand
+    // the second-launch client on a pipe read (and so activate can PostMessage).
     write_frame(pipe, jsonutil::stringify(jsonutil::rpc_ok(id, true)));
+    if (activate_) activate_(argv);
     return;
   }
 

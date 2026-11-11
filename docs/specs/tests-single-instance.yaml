@@ -25,3 +25,13 @@ single_instance:
       instances: multi
     output:
       both_listening: true
+
+  - name: "activate respawns dead BEAM child"
+    input:
+      instances: single
+      stay_up: true
+      kill_beam_then_activate: true
+    output:
+      second_exit: 0
+      start_count_grows: true
+      host_stays_up: true

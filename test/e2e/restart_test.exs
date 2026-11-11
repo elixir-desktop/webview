@@ -111,6 +111,91 @@ defmodule DesktopWebview.E2E.RestartTest do
     refute File.exists?(Path.join(root, "eval.log"))
   end
 
+  test "runtime kill of BEAM child respawns start" do
+    root = BeamFixture.tmp_dir("edw-runtime-kill")
+    fx = BeamFixture.write_restart_fixture!(root, stay_up: true)
+
+    {:ok, launcher} =
+      Launcher.start(
+        no_beam: false,
+        test_rpc: false,
+        extra_args: ["--edw-config=#{fx.ini}"]
+      )
+
+    on_exit(fn ->
+      stop_host(launcher)
+      kill_fixture_children(root)
+      File.rm_rf(root)
+    end)
+
+    assert BeamFixture.wait_until(fn ->
+             BeamFixture.count_lines(Path.join(root, "starts.log")) >= 1
+           end)
+
+    before = BeamFixture.count_lines(Path.join(root, "starts.log"))
+    assert is_integer(launcher.os_pid)
+    BeamFixture.kill_direct_children!(launcher.os_pid)
+
+    assert BeamFixture.wait_until(fn ->
+             BeamFixture.count_lines(Path.join(root, "starts.log")) > before
+           end),
+           "expected host to respawn BEAM after runtime kill; starts=#{inspect(File.read(Path.join(root, "starts.log")))}"
+
+    assert host_alive?(launcher)
+  end
+
+  test "prepare_quit then BEAM exit terminates the host" do
+    root = BeamFixture.tmp_dir("edw-prepare-quit")
+    fx = BeamFixture.write_restart_fixture!(root, stay_up: true)
+
+    {:ok, launcher} =
+      Launcher.start(
+        no_beam: false,
+        test_rpc: false,
+        extra_args: ["--edw-config=#{fx.ini}"]
+      )
+
+    on_exit(fn ->
+      stop_host(launcher)
+      kill_fixture_children(root)
+      File.rm_rf(root)
+    end)
+
+    assert BeamFixture.wait_until(fn ->
+             BeamFixture.count_lines(Path.join(root, "starts.log")) >= 1
+           end)
+
+    BeamFixture.attach_transport!(launcher.listen_port)
+    assert {:ok, true} = DesktopWebview.Transport.call("system.prepare_quit", %{})
+    before = BeamFixture.count_lines(Path.join(root, "starts.log"))
+    BeamFixture.kill_direct_children!(launcher.os_pid)
+
+    assert BeamFixture.wait_until(fn -> not host_alive?(launcher) end, 8_000),
+           "expected host to exit after prepare_quit + BEAM death"
+
+    assert BeamFixture.count_lines(Path.join(root, "starts.log")) == before
+  end
+
+  defp host_alive?(%{os_pid: os_pid}) when is_integer(os_pid) do
+    case :os.type() do
+      {:win32, _} ->
+        {out, _} =
+          System.cmd(
+            "tasklist",
+            ["/FI", "PID eq #{os_pid}", "/NH"],
+            stderr_to_stdout: true
+          )
+
+        String.contains?(out, Integer.to_string(os_pid))
+
+      _ ->
+        {_out, status} =
+          System.cmd("kill", ["-0", Integer.to_string(os_pid)], stderr_to_stdout: true)
+
+        status == 0
+    end
+  end
+
   defp host_alive?(%{port: port}) do
     match?([_ | _], Port.info(port))
   end
