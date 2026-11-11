@@ -239,9 +239,11 @@ void HostController::spawn_beam() {
   }
   beam_watch_id_ = g_child_watch_add(
       beam_pid_,
-      +[](GPid /*pid*/, gint /*status*/, gpointer user_data) -> void {
+      +[](GPid pid, gint /*status*/, gpointer user_data) -> void {
         auto* self = static_cast<HostController*>(user_data);
         self->beam_watch_id_ = 0;
+        // Ignore stale watches after activate respawn replaced the child.
+        if (self->beam_pid_ != pid) return;
         self->beam_did_exit();
       },
       this);
@@ -317,7 +319,10 @@ void HostController::maybe_respawn_beam_for_activate() {
 }
 
 void HostController::beam_did_exit() {
-  if (beam_pid_ <= 0 && beam_watch_id_ == 0) return;
+  if (beam_pid_ <= 0) return;
+  // Activate respawn can reclaim a dead child and spawn a replacement before a
+  // previously queued child-watch callback runs. Ignore that stale exit.
+  if (beam_child_alive()) return;
   bool was_initialized = initialized_;
   bool clean = quit_initiated_ || clean_exit_expected();
   expected_beam_exit_until_us_ = 0;

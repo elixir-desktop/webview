@@ -228,10 +228,9 @@ defmodule DesktopWebview.BeamFixture do
         :ok
 
       _ ->
+        # pgrep -P works on both Linux and macOS; GNU `ps --ppid` does not.
         {out, _} =
-          System.cmd("ps", ["-o", "pid=", "--ppid", Integer.to_string(parent_pid)],
-            stderr_to_stdout: true
-          )
+          System.cmd("pgrep", ["-P", Integer.to_string(parent_pid)], stderr_to_stdout: true)
 
         for pid <- String.split(out, "\n", trim: true) do
           System.cmd("kill", ["-9", String.trim(pid)], stderr_to_stdout: true)

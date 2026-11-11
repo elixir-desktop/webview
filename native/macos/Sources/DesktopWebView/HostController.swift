@@ -265,7 +265,7 @@ final class HostController: NSObject, UNUserNotificationCenterDelegate {
         } ?? beamDir
         proc.currentDirectoryURL = URL(fileURLWithPath: wd)
         proc.terminationHandler = { [weak self] _ in
-            DispatchQueue.main.async { self?.beamDidExit() }
+            DispatchQueue.main.async { self?.beamDidExit(for: proc) }
         }
         do {
             try proc.run()
@@ -333,10 +333,12 @@ final class HostController: NSObject, UNUserNotificationCenterDelegate {
     /// Handle BEAM exit while the host is still alive. Decide whether to respawn
     /// based on whether the exit looked intentional (`system.prepare_quit`)
     /// and whether we have a maximum-attempts budget left.
-    private func beamDidExit() {
-        guard beamProcess != nil || restartTimer != nil || cleanExitExpected() || quitRequested else {
-            return
-        }
+    private func beamDidExit(for exited: Process? = nil) {
+        guard let proc = beamProcess else { return }
+        // Stale terminationHandler after activate respawn: ignore if a newer
+        // child already replaced the exited process.
+        if let exited, exited !== proc { return }
+        if proc.isRunning { return }
         let wasInitialized = initialized
         let clean = quitRequested || cleanExitExpected()
         expectedBeamExitUntil = nil

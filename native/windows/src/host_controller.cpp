@@ -330,6 +330,9 @@ void HostController::maybe_respawn_beam_for_activate() {
 
 void HostController::beam_did_exit() {
   if (!beam_process_) return;
+  // Activate respawn can reclaim a dead child and spawn a replacement before a
+  // previously posted WM_EDW_BEAM_EXIT is dispatched. Ignore that stale exit.
+  if (WaitForSingleObject(beam_process_, 0) != WAIT_OBJECT_0) return;
   bool was_initialized = initialized_;
   bool clean = quit_initiated_ || clean_exit_expected();
   expected_beam_exit_until_ = 0;
