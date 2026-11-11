@@ -224,9 +224,13 @@ final class HostController: NSObject, UNUserNotificationCenterDelegate {
     }
 
     func finishQuit() {
+        // resetSession() sets suppressTerminate; clear it so NSApp.terminate
+        // is not cancelled when clean BEAM exit finishes the host.
+        suppressTerminate = false
         readyToTerminate = true
         restartTimer?.cancel()
         restartTimer = nil
+        stopLivenessTimer()
         // Force the host-kills-BEAM path into the "do not respawn" branch.
         expectedBeamExitUntil = Date().addingTimeInterval(3.0)
         beamProcess?.terminate()

@@ -12,7 +12,9 @@
 #include <cstring>
 #include <csignal>
 #include <fstream>
+#include <sys/types.h>
 #include <sys/utsname.h>
+#include <sys/wait.h>
 #include <unistd.h>
 #include <algorithm>
 
@@ -224,7 +226,10 @@ void HostController::spawn_beam() {
   envp.push_back(nullptr);
 
   GError* err = nullptr;
-  if (!g_spawn_async(wd.c_str(), argv.data(), envp.data(), G_SPAWN_DEFAULT, nullptr, nullptr,
+  // DO_NOT_REAP_CHILD is required so g_child_watch_add can observe the exit.
+  auto spawn_flags =
+      static_cast<GSpawnFlags>(G_SPAWN_DEFAULT | G_SPAWN_DO_NOT_REAP_CHILD);
+  if (!g_spawn_async(wd.c_str(), argv.data(), envp.data(), spawn_flags, nullptr, nullptr,
                      &beam_pid_, &err)) {
     fprintf(stderr, "edw: failed to spawn beam: %s\n", err ? err->message : "unknown");
     if (err) g_error_free(err);
@@ -252,7 +257,21 @@ void HostController::spawn_beam() {
 
 bool HostController::beam_child_alive() const {
   if (beam_pid_ <= 0) return false;
-  return kill(beam_pid_, 0) == 0;
+  if (kill(beam_pid_, 0) != 0) return false;
+  // Zombies still satisfy kill(pid, 0). Treat them as dead so liveness and
+  // activate respawn can reclaim after an unreaped exit.
+  char path[64];
+  std::snprintf(path, sizeof(path), "/proc/%d/stat", static_cast<int>(beam_pid_));
+  FILE* f = std::fopen(path, "r");
+  if (!f) return false;
+  char buf[512];
+  size_t n = std::fread(buf, 1, sizeof(buf) - 1, f);
+  std::fclose(f);
+  if (n == 0) return false;
+  buf[n] = '\0';
+  char* rparen = std::strrchr(buf, ')');
+  if (!rparen || rparen[1] == '\0' || rparen[2] == '\0') return false;
+  return rparen[2] != 'Z';
 }
 
 bool HostController::clean_exit_expected() const {
@@ -330,6 +349,10 @@ void HostController::beam_did_exit() {
   if (beam_watch_id_ != 0) {
     g_source_remove(beam_watch_id_);
     beam_watch_id_ = 0;
+    // Cancelling the watch leaves the child unreaped; reap so the pid can be
+    // reused safely by the next spawn.
+    int status = 0;
+    waitpid(beam_pid_, &status, WNOHANG);
   }
   beam_pid_ = 0;
   reset_session();
