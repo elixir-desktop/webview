@@ -881,6 +881,9 @@ void HostController::update_tray_icon(TrayEntry& tray) {
     if (it != icons_.end() && it->second.icon) icon = it->second.icon;
   }
   tray.nid.hIcon = icon;
+  // Icon updates must not carry NIF_INFO. A leftover balloon flag makes every
+  // NIM_MODIFY show the last notification again.
+  tray.nid.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
   if (tray.registered) {
     Shell_NotifyIconW(NIM_MODIFY, &tray.nid);
   }
@@ -924,17 +927,37 @@ jsonutil::Json HostController::notification_show(const jsonutil::Json& params) {
   auto title = jsonutil::get_string(params, "title").value_or("");
   auto message = jsonutil::get_string(params, "message").value_or("");
   // Best-effort: use a tray balloon if any tray exists; otherwise stderr.
+  // The balloon is a copy so tray.nid keeps icon-only flags. Writing NIF_INFO
+  // onto the stored icon makes later tray.set_icon calls replay this balloon.
   if (!trays_.empty()) {
     auto& tray = trays_.begin()->second;
-    tray.nid.uFlags = NIF_INFO | NIF_ICON | NIF_MESSAGE | NIF_TIP;
-    wcsncpy_s(tray.nid.szInfoTitle, utf8_to_wide(title).c_str(), _TRUNCATE);
-    wcsncpy_s(tray.nid.szInfo, utf8_to_wide(message).c_str(), _TRUNCATE);
-    tray.nid.dwInfoFlags = NIIF_INFO;
-    if (tray.registered) Shell_NotifyIconW(NIM_MODIFY, &tray.nid);
+    NOTIFYICONDATAW nid = tray.nid;
+    nid.uFlags = NIF_INFO | NIF_ICON | NIF_MESSAGE | NIF_TIP;
+    wcsncpy_s(nid.szInfoTitle, utf8_to_wide(title).c_str(), _TRUNCATE);
+    wcsncpy_s(nid.szInfo, utf8_to_wide(message).c_str(), _TRUNCATE);
+    nid.dwInfoFlags = NIIF_INFO;
+    if (tray.registered) Shell_NotifyIconW(NIM_MODIFY, &nid);
   } else {
     fprintf(stderr, "notification: %s: %s\n", title.c_str(), message.c_str());
   }
   return jsonutil::Json{{"notification_id", id}};
+}
+
+jsonutil::Json HostController::notification_close(const jsonutil::Json&) {
+  // An empty szInfo with NIF_INFO hides the balloon. Apply it to a copy so the
+  // stored tray icon does not keep the balloon flag.
+  if (!trays_.empty()) {
+    auto& tray = trays_.begin()->second;
+    if (tray.registered) {
+      NOTIFYICONDATAW nid = tray.nid;
+      nid.uFlags = NIF_INFO;
+      nid.szInfo[0] = L'\0';
+      nid.szInfoTitle[0] = L'\0';
+      nid.dwInfoFlags = 0;
+      Shell_NotifyIconW(NIM_MODIFY, &nid);
+    }
+  }
+  return true;
 }
 
 jsonutil::Json HostController::dispatch(const std::string& method, const jsonutil::Json& params) {
@@ -1083,7 +1106,7 @@ jsonutil::Json HostController::dispatch(const std::string& method, const jsonuti
   }
 
   if (method == "notification.show") return notification_show(p);
-  if (method == "notification.close") return true;
+  if (method == "notification.close") return notification_close(p);
 
   if (method == "icon.create") return icon_create(p);
   if (method == "icon.destroy") {
