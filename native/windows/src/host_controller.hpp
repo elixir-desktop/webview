@@ -92,6 +92,7 @@ class HostController {
   jsonutil::Json tray_create(const jsonutil::Json& params);
   jsonutil::Json icon_create(const jsonutil::Json& params);
   jsonutil::Json notification_show(const jsonutil::Json& params);
+  jsonutil::Json notification_close(const jsonutil::Json& params);
   void update_tray_icon(TrayEntry& tray);
   void destroy_menu_entry(MenuEntry& entry);
 
