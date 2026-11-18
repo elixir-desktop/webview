@@ -6,17 +6,26 @@ constexpr const wchar_t* kSplashClass = L"DesktopWebViewSplash";
 constexpr int kSplashWidth = 360;
 constexpr int kSplashHeight = 240;
 constexpr int kIconSize = 128;
+constexpr COLORREF kSplashBg = RGB(220, 220, 220);
 bool g_class_registered = false;
+HBRUSH g_bg_brush = nullptr;
+
+HBRUSH splash_bg_brush() {
+  if (!g_bg_brush) g_bg_brush = CreateSolidBrush(kSplashBg);
+  return g_bg_brush;
+}
 }  // namespace
 
 void SplashWindow::register_class() {
   if (g_class_registered) return;
   WNDCLASSEXW wc{};
   wc.cbSize = sizeof(wc);
+  // CS_DROPSHADOW: system drop shadow on borderless WS_POPUP (DWM composition).
+  wc.style = CS_DROPSHADOW;
   wc.lpfnWndProc = SplashWindow::WndProc;
   wc.hInstance = GetModuleHandleW(nullptr);
   wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
-  wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
+  wc.hbrBackground = splash_bg_brush();
   wc.lpszClassName = kSplashClass;
   wc.hIcon = extract_module_icon();
   wc.hIconSm = extract_module_icon();
@@ -62,9 +71,9 @@ void SplashWindow::show(const std::wstring& status, const std::optional<std::wst
   int x = work.left + ((work.right - work.left) - kSplashWidth) / 2;
   int y = work.top + ((work.bottom - work.top) - kSplashHeight) / 2;
 
-  hwnd_ = CreateWindowExW(WS_EX_TOPMOST | WS_EX_TOOLWINDOW, kSplashClass, L"",
-                          WS_POPUP | WS_BORDER, x, y, kSplashWidth, kSplashHeight, nullptr,
-                          nullptr, GetModuleHandleW(nullptr), this);
+  hwnd_ = CreateWindowExW(WS_EX_TOPMOST | WS_EX_TOOLWINDOW, kSplashClass, L"", WS_POPUP, x, y,
+                          kSplashWidth, kSplashHeight, nullptr, nullptr, GetModuleHandleW(nullptr),
+                          this);
   if (!hwnd_) return;
   ShowWindow(hwnd_, SW_SHOW);
   UpdateWindow(hwnd_);
@@ -124,7 +133,7 @@ void SplashWindow::paint(HWND hwnd) {
 
   RECT client{};
   GetClientRect(hwnd, &client);
-  FillRect(hdc, &client, reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1));
+  FillRect(hdc, &client, splash_bg_brush());
 
   if (icon_) {
     int icon_x = (client.right - kIconSize) / 2;
@@ -134,7 +143,7 @@ void SplashWindow::paint(HWND hwnd) {
 
   RECT text_rc{16, 28 + kIconSize + 16, client.right - 16, client.bottom - 16};
   SetBkMode(hdc, TRANSPARENT);
-  SetTextColor(hdc, RGB(40, 40, 40));
+  SetTextColor(hdc, RGB(32, 32, 32));
   DrawTextW(hdc, status_.c_str(), static_cast<int>(status_.size()), &text_rc,
             DT_CENTER | DT_TOP | DT_WORDBREAK | DT_NOPREFIX);
 

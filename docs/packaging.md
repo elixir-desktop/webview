@@ -56,7 +56,8 @@ MyApp/
   `--edw-app-user-model-id=`. The host calls
   `SetCurrentProcessExplicitAppUserModelID` before creating windows, and passes
   `EDW_APP_USER_MODEL_ID` to the BEAM child so Elixir can set the same ID
-  in-process (`DesktopWebview.AppUserModelId`).
+  in-process via prebuilt `priv/native/windows/aumid_nif.dll`
+  (`scripts/build_windows.ps1`, same as the host binary — not `mix compile`).
 
 - Release asset name: `DesktopWebView-windows-x64.exe` (see Binaries).
 - WebView2: document Evergreen Runtime dependency in the app installer; the host
@@ -220,7 +221,7 @@ environment key is unset.
 | Platform | Delivery | Artifact name |
 |----------|----------|---------------|
 | macOS | Universal binary in Hex `priv/native/macos/DesktopWebView` | `DesktopWebView-macos-universal` (also on GitHub Releases) |
-| Windows | GitHub Releases (draft on tag); **not** in Hex `priv/` | `DesktopWebView-windows-x64.exe` + `.sha256` |
+| Windows | GitHub Releases (draft on tag); **not** in Hex `priv/` | `DesktopWebView-windows-x64.exe` + `.sha256`; local/CI also builds `aumid_nif.dll` beside the host via `scripts/build_windows.ps1` |
 | Linux | GitHub Releases (draft on tag); **not** in Hex `priv/` | `DesktopWebView-linux-x86_64` + `.sha256` |
 
 CI ad-hoc signs the macOS binary (`codesign -s -`). Full Developer ID / notarization

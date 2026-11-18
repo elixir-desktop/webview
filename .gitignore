@@ -17,5 +17,8 @@ native/windows/build/
 priv/native/macos/DesktopWebView
 priv/native/linux/DesktopWebView
 priv/native/windows/DesktopWebView.exe
+priv/native/windows/aumid_nif.dll
+priv/native/windows/aumid_nif.exp
+priv/native/windows/aumid_nif.lib
 .DS_Store
 *.swp

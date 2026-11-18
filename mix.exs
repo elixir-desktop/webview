@@ -10,8 +10,6 @@ defmodule DesktopWebview.MixProject do
       version: @version,
       elixir: "~> 1.15",
       elixirc_paths: elixirc_paths(Mix.env()),
-      compilers: compilers(),
-      make_clean: ["clean"],
       start_permanent: Mix.env() == :prod,
       deps: deps(),
       aliases: aliases(),
@@ -47,20 +45,10 @@ defmodule DesktopWebview.MixProject do
   defp elixirc_paths(:test), do: ["lib", "test/support"]
   defp elixirc_paths(_), do: ["lib"]
 
-  # Windows-only aumid_nif for SetCurrentProcessExplicitAppUserModelID in BEAM.
-  defp compilers do
-    if match?({:win32, _}, :os.type()) do
-      [:elixir_make] ++ Mix.compilers()
-    else
-      Mix.compilers()
-    end
-  end
-
   defp deps do
     [
       {:desktop, path: desktop_dep_path(), override: true},
       {:jason, "~> 1.4"},
-      {:elixir_make, "~> 0.8", runtime: false},
       {:ex_doc, ">= 0.0.0", only: :dev, runtime: false}
     ]
   end
@@ -90,7 +78,7 @@ defmodule DesktopWebview.MixProject do
       licenses: ["MIT"],
       links: %{"GitHub" => @url},
       files:
-        ~w(lib priv c_src Makefile native/macos/README.md mix.exs README.md AGENTS.md LICENSE docs)
+        ~w(lib priv c_src native/macos/README.md mix.exs README.md AGENTS.md LICENSE docs)
     ]
   end
 end

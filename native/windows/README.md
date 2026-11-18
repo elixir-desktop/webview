@@ -19,7 +19,11 @@ CMake fetches `Microsoft.Web.WebView2` and `nlohmann/json` during configure.
 ```
 
 Output is copied to `priv\native\windows\DesktopWebView.exe` for local/CI use.
-Release artifact name: `DesktopWebView-windows-x64.exe` (see [packaging.md](../../docs/packaging.md)).
+When Elixir/OTP is on `PATH`, the same script also builds
+`priv\native\windows\aumid_nif.dll` from `c_src/aumid_nif.c` (BEAM-side
+AppUserModelID; not compiled by `mix`). Rebuild the NIF with the same OTP
+major you run against. Release artifact name:
+`DesktopWebView-windows-x64.exe` (see [packaging.md](../../docs/packaging.md)).
 
 ## Run (dev / E2E)
 

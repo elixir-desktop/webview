@@ -12,7 +12,7 @@ Release asset: `DesktopWebView-windows-x64.exe` (GitHub Releases; not Hex `priv/
 | `initialize` + capabilities | done | E2E setup |
 | `--edw-no-beam` / argv strip | done | E2E |
 | Ini + defaults | done | Same semantics as Linux/macOS |
-| Shared AppUserModelID | done | `[windows] app_user_model_id` / `--edw-app-user-model-id`; host sets via Win32 API; BEAM via `EDW_APP_USER_MODEL_ID` + `aumid_nif` |
+| Shared AppUserModelID | done | `[windows] app_user_model_id` / `--edw-app-user-model-id`; host sets via Win32 API; BEAM via `EDW_APP_USER_MODEL_ID` + prebuilt `aumid_nif.dll` (`build_windows.ps1`) |
 | Lifetime reconnect | done | Packaged mode (keep listening) |
 | Lifetime coupled | done | Exit on disconnect; `--edw-no-beam` exits |
 | Window open/show/hide/title/min size | done | E2E window test |

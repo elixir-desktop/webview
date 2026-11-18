@@ -1,6 +1,9 @@
 defmodule DesktopWebview.AppUserModelId do
   @moduledoc false
 
+  # Prebuilt by scripts/build_windows.ps1 → priv/native/windows/aumid_nif.dll
+  # (not compiled via mix). Missing DLL keeps the Elixir stub (:ok no-op).
+
   @on_load :load_nif
 
   def load_nif do
