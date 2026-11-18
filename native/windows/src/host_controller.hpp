@@ -3,12 +3,14 @@
 #include "win_prefix.hpp"
 #include "config.hpp"
 #include "rpc_server.hpp"
+#include "splash_window.hpp"
 #include "web_window.hpp"
 
 #include <atomic>
 #include <functional>
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -107,9 +109,16 @@ class HostController {
   LRESULT on_host_message(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
   bool on_menu_command(UINT cmd);
 
+  bool splash_enabled() const;
+  std::optional<std::wstring> resolved_splash_icon_path() const;
+  void show_splash(const wchar_t* status);
+  void set_splash_status(const wchar_t* status);
+  void dismiss_splash();
+
   HostConfig config_;
   RpcServer server_;
   HWND hwnd_ = nullptr;
+  SplashWindow splash_;
   bool initialized_ = false;
   bool quit_initiated_ = false;
   // Tick count deadline for system.prepare_quit (0 = no window).

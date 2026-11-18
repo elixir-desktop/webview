@@ -12,6 +12,7 @@ Release asset: `DesktopWebView-windows-x64.exe` (GitHub Releases; not Hex `priv/
 | `initialize` + capabilities | done | E2E setup |
 | `--edw-no-beam` / argv strip | done | E2E |
 | Ini + defaults | done | Same semantics as Linux/macOS |
+| Shared AppUserModelID | done | `[windows] app_user_model_id` / `--edw-app-user-model-id`; host sets via Win32 API; BEAM via `EDW_APP_USER_MODEL_ID` + `aumid_nif` |
 | Lifetime reconnect | done | Packaged mode (keep listening) |
 | Lifetime coupled | done | Exit on disconnect; `--edw-no-beam` exits |
 | Window open/show/hide/title/min size | done | E2E window test |
@@ -23,7 +24,8 @@ Release asset: `DesktopWebView-windows-x64.exe` (GitHub Releases; not Hex `priv/
 | New window → external open | done | `ShellExecute` + event |
 | Context menu disable | done | WebView2 settings |
 | Menubar from DOM | done | E2E menu create |
-| Tray / status item | done | `Shell_NotifyIcon`; E2E tray create |
+| Tray / status item | done | `Shell_NotifyIcon`; left- and right-click both open the bound context menu; E2E tray create |
+| Packaged splash | done | Host-first only (`beam` spawn): `[ui] splash_icon` / `--edw-splash-icon` or PE icon + Starting/Repairing/Restarting; dismiss on first `window.open` |
 | Apple menu | n/a | Successful no-op |
 | Notifications | done | Balloon via tray when present; E2E |
 | Icons from path / PNG | done | ICO via `LoadImage`; PNG/JPEG via GDI+ `Bitmap::GetHICON`; class/default from exe |

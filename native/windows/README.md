@@ -57,12 +57,32 @@ This browser feature is separate from the [`dialog.choose_file` JSON-RPC
 method](../../docs/protocol.md#dialog). That method is an explicit host dialog
 request for code that needs a path returned through the Elixir transport.
 
+## Packaged splash
+
+In host-first mode (BEAM spawned by the host, not `--edw-no-beam`), a small
+centered splash shows a logo and a status label:
+
+- Logo from `[ui] splash_icon` / `--edw-splash-icon=` when set (PNG/ICO beside
+  the host, or absolute path); otherwise the embedded PE/module icon
+- `Starting app` on cold start / respawn
+- `Repairing` while the recovery script runs
+- `Restarting` before a backoff respawn
+
+The splash dismisses on the first `window.open`. Dev launches with
+`--edw-no-beam` do not show it. Packaging can set `package.splash_icon` so
+`desktop_deployment` copies `splash.png` and writes the ini key.
+
+## Tray
+
+Left- and right-click on the tray icon both open the same bound context menu
+(and both still emit `event.tray.click`).
+
 ## Structure
 
 | Path | Role |
 |------|------|
 | `CMakeLists.txt` | CMake project + WebView2 / JSON deps |
-| `src/` | Host sources (config, RPC, windows, dispatch) |
+| `src/` | Host sources (config, RPC, windows, splash, dispatch) |
 
 Do not add a native unit-test suite; exercise the binary from Elixir E2E (`mix test.e2e`).
 

@@ -27,6 +27,9 @@ defmodule DesktopWebview.Backend do
 
   @impl true
   def init_env do
+    # Before any Shell/toast use — share host AppUserModelID for Task Manager grouping.
+    DesktopWebview.AppUserModelId.apply_from_env()
+
     Transport.ensure_started()
     EventBridge.ensure_started()
 
