@@ -77,7 +77,8 @@ defmodule DesktopWebview.MixProject do
       name: "desktop_webview",
       licenses: ["MIT"],
       links: %{"GitHub" => @url},
-      files: ~w(lib priv native/macos/README.md mix.exs README.md AGENTS.md LICENSE docs)
+      files:
+        ~w(lib priv c_src native/macos/README.md mix.exs README.md AGENTS.md LICENSE docs)
     ]
   end
 end

@@ -1,4 +1,4 @@
-# Build DesktopWebView.exe (x64) and copy to priv/native/windows/
+﻿# Build DesktopWebView.exe + aumid_nif.dll (x64) into priv/native/windows/
 $ErrorActionPreference = "Stop"
 
 $Root = Split-Path -Parent $PSScriptRoot
@@ -16,8 +16,49 @@ if (-not $vsPath) { throw "Visual Studio with MSVC not found" }
 $vcvars = Join-Path $vsPath "VC\Auxiliary\Build\vcvars64.bat"
 if (-not (Test-Path $vcvars)) { throw "vcvars64.bat not found at $vcvars" }
 
+function Get-ErtsInclude {
+  $elixir = Get-Command elixir -ErrorAction SilentlyContinue
+  if (-not $elixir) { return $null }
+  # elixir.bat + powershell -e "(...)" breaks on parentheses; use a temp script.
+  $exs = Join-Path $env:TEMP ("edw-erts-" + [guid]::NewGuid().ToString("n") + ".exs")
+  try {
+    Set-Content -Path $exs -Encoding ASCII -Value @(
+      'IO.write(Path.join(['
+      '  List.to_string(:code.root_dir()),'
+      '  "erts-#{List.to_string(:erlang.system_info(:version))}",'
+      '  "include"'
+      ']))'
+    )
+    $path = & elixir $exs
+    if ($LASTEXITCODE -ne 0 -or -not $path -or -not (Test-Path (Join-Path $path "erl_nif.h"))) {
+      return $null
+    }
+    return $path
+  } finally {
+    Remove-Item $exs -ErrorAction SilentlyContinue
+  }
+}
+
+$ertsInclude = Get-ErtsInclude
+
 $cmdExe = Join-Path $env:SystemRoot "System32\cmd.exe"
 $bat = Join-Path $env:TEMP ("edw-build-" + [guid]::NewGuid().ToString("n") + ".cmd")
+
+# enif_* resolve via WinDynNifCallbacks (no erl_dll.lib). shell32/ole32 for AUMID.
+$nifBlock = "echo aumid_nif: skipped (elixir/erl_nif.h not found)"
+if ($ertsInclude) {
+  $nifSrc = Join-Path $Root "c_src\aumid_nif.c"
+  $nifDll = Join-Path $OutDir "aumid_nif.dll"
+  $nifObj = Join-Path $BuildDir "aumid_nif.obj"
+  $nifExp = Join-Path $OutDir "aumid_nif.exp"
+  $nifLib = Join-Path $OutDir "aumid_nif.lib"
+  $nifBlock = @"
+cl /nologo /LD /O2 /MD /I"$ertsInclude" "$nifSrc" /Fo"$nifObj" /Fe"$nifDll" /link shell32.lib ole32.lib || exit /b 1
+del /q "$nifExp" "$nifLib" 2>nul
+echo Built priv\native\windows\aumid_nif.dll
+"@
+}
+
 @"
 @echo off
 call "$vcvars" || exit /b 1
@@ -38,6 +79,7 @@ if exist native\windows\build\DesktopWebView.exe (
   exit /b 1
 )
 echo Built priv\native\windows\DesktopWebView.exe
+$nifBlock
 "@ | Set-Content -Path $bat -Encoding ASCII
 
 try {
@@ -45,4 +87,8 @@ try {
   if ($LASTEXITCODE -ne 0) { throw "Windows host build failed with exit $LASTEXITCODE" }
 } finally {
   Remove-Item $bat -ErrorAction SilentlyContinue
+}
+
+if (-not $ertsInclude) {
+  Write-Warning "aumid_nif.dll not built: need elixir on PATH with erl_nif.h (CI/setup-beam provides this)."
 }

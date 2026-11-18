@@ -123,6 +123,10 @@ HostConfig HostConfig::parse(int argc, char** argv) {
         cfg.instances = (v == "single") ? Instances::Single : Instances::Multi;
       } else if (body.rfind("instance-id=", 0) == 0) {
         cfg.instance_id = body.substr(12);
+      } else if (body.rfind("splash-icon=", 0) == 0) {
+        cfg.splash_icon = body.substr(12);
+      } else if (body.rfind("app-user-model-id=", 0) == 0) {
+        cfg.app_user_model_id = body.substr(18);
       } else {
         fprintf(stderr, "unknown --edw flag: %s\n", a.c_str());
       }
@@ -223,6 +227,14 @@ void HostConfig::apply_ini() {
   if (auto v = ini.get("beam", "node")) beam_node = *v;
   if (auto v = ini.get("beam", "cookie")) beam_cookie = *v;
   if (auto v = ini.get("beam", "cookie_file")) beam_cookie_file = *v;
+  // CLI --edw-splash-icon= wins when already set before apply_ini.
+  if (!splash_icon) {
+    if (auto v = ini.get("ui", "splash_icon")) splash_icon = *v;
+  }
+  // CLI --edw-app-user-model-id= wins when already set before apply_ini.
+  if (!app_user_model_id) {
+    if (auto v = ini.get("windows", "app_user_model_id")) app_user_model_id = *v;
+  }
   for (auto& [k, v] : ini.section("env")) {
     extra_env[k] = v;
   }

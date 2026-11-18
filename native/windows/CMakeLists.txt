@@ -32,10 +32,12 @@ endif()
 
 add_executable(DesktopWebView WIN32
   src/main.cpp
+  src/aumid.cpp
   src/config.cpp
   src/json_util.cpp
   src/rpc_server.cpp
   src/web_window.cpp
+  src/splash_window.cpp
   src/host_controller.cpp
   src/beam_cli.cpp
   src/instance_lock.cpp

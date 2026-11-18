@@ -1,3 +1,4 @@
+#include "aumid.hpp"
 #include "beam_cli.hpp"
 #include "config.hpp"
 #include "host_controller.hpp"
@@ -38,6 +39,8 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
   for (auto& s : args) argv_ptrs.push_back(s.data());
 
   auto config = HostConfig::parse(static_cast<int>(argv_ptrs.size()), argv_ptrs.data());
+  // Before any HWND / Shell_NotifyIcon — shared with BEAM via EDW_APP_USER_MODEL_ID.
+  if (config.app_user_model_id) set_app_user_model_id(*config.app_user_model_id);
   int exclusive = 0;
   if (beamcli::maybe_run_exclusive(config, &exclusive)) {
     CoUninitialize();

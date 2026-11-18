@@ -45,9 +45,20 @@ MyApp/
   `DesktopWebView.exe` from `desktop_webview` / `DESKTOP_HOST_BINARY`.
 - Ini discovery: `--edw-config` → `<exe_basename>.ini` beside the executable →
   `DesktopWebView.ini` beside the executable.
-- Relative `beam.path` / `working_dir` resolve against the directory containing
-  the host executable.
+- Relative `beam.path` / `working_dir` / `[ui] splash_icon` resolve against the
+  directory containing the host executable. Optional splash logo:
+  `package.splash_icon` (via `desktop_deployment`) → `splash.png` beside the
+  host + `[ui] splash_icon = splash.png`, or `--edw-splash-icon=PATH`. When
+  unset, the splash uses the PE/module icon.
 - Forwarded argv and `EDW_PORT` / `EDW_HOST` are unchanged.
+- Shared Task Manager / taskbar grouping: set `[windows] app_user_model_id`
+  (from `package.identifier` via desktop_deployment) or
+  `--edw-app-user-model-id=`. The host calls
+  `SetCurrentProcessExplicitAppUserModelID` before creating windows, and passes
+  `EDW_APP_USER_MODEL_ID` to the BEAM child so Elixir can set the same ID
+  in-process via prebuilt `priv/native/windows/aumid_nif.dll`
+  (`scripts/build_windows.ps1`, same as the host binary — not `mix compile`).
+
 - Release asset name: `DesktopWebView-windows-x64.exe` (see Binaries).
 - WebView2: document Evergreen Runtime dependency in the app installer; the host
   should fail with a clear stderr message if the runtime is missing.
@@ -210,7 +221,7 @@ environment key is unset.
 | Platform | Delivery | Artifact name |
 |----------|----------|---------------|
 | macOS | Universal binary in Hex `priv/native/macos/DesktopWebView` | `DesktopWebView-macos-universal` (also on GitHub Releases) |
-| Windows | GitHub Releases (draft on tag); **not** in Hex `priv/` | `DesktopWebView-windows-x64.exe` + `.sha256` |
+| Windows | GitHub Releases (draft on tag); **not** in Hex `priv/` | `DesktopWebView-windows-x64.exe` + `.sha256`; local/CI also builds `aumid_nif.dll` beside the host via `scripts/build_windows.ps1` |
 | Linux | GitHub Releases (draft on tag); **not** in Hex `priv/` | `DesktopWebView-linux-x86_64` + `.sha256` |
 
 CI ad-hoc signs the macOS binary (`codesign -s -`). Full Developer ID / notarization

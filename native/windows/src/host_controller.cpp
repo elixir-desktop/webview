@@ -81,6 +81,7 @@ HostController::~HostController() {
   }
   for (auto& [_, menu] : menus_) destroy_menu_entry(menu);
   windows_.clear();
+  dismiss_splash();
   if (hwnd_) {
     DestroyWindow(hwnd_);
     hwnd_ = nullptr;
@@ -113,10 +114,41 @@ bool HostController::start() {
   if (!server_.start(config_.host, config_.port, hwnd_)) return false;
 
   if (config_.beam_enabled && !config_.no_beam) {
+    show_splash(L"Starting app");
     spawn_beam();
   }
   return true;
 }
+
+bool HostController::splash_enabled() const {
+  return config_.beam_enabled && !config_.no_beam;
+}
+
+std::optional<std::wstring> HostController::resolved_splash_icon_path() const {
+  if (!config_.splash_icon || config_.splash_icon->empty()) return std::nullopt;
+  std::string path = *config_.splash_icon;
+  if (!is_absolute_path(path)) path = join_path(config_.resources_root(), path);
+  if (!file_exists(path)) {
+    fprintf(stderr, "edw: splash_icon not found: %s\n", path.c_str());
+    return std::nullopt;
+  }
+  return utf8_to_wide(path);
+}
+
+void HostController::show_splash(const wchar_t* status) {
+  if (!splash_enabled()) return;
+  splash_.show(status, resolved_splash_icon_path());
+}
+
+void HostController::set_splash_status(const wchar_t* status) {
+  if (!splash_enabled()) return;
+  if (splash_.visible())
+    splash_.set_status(status);
+  else
+    splash_.show(status, resolved_splash_icon_path());
+}
+
+void HostController::dismiss_splash() { splash_.dismiss(); }
 
 LRESULT CALLBACK HostController::HostWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
   HostController* self = nullptr;
@@ -191,7 +223,7 @@ LRESULT HostController::on_host_message(HWND hwnd, UINT msg, WPARAM wParam, LPAR
         if (tray.nid.uID == id) {
           jsonutil::Json o{{"tray_id", tid}};
           server_.notify("event.tray.click", std::move(o));
-          if (lParam == WM_RBUTTONUP && !tray.menu_id.empty()) {
+          if (!tray.menu_id.empty()) {
             auto it = menus_.find(tray.menu_id);
             if (it != menus_.end() && it->second.menu) {
               POINT pt{};
@@ -280,6 +312,7 @@ void HostController::mark_prepare_quit_window() {
 }
 
 void HostController::exit_host_clean() {
+  dismiss_splash();
   stop_liveness_timer();
   if (respawn_timer_id_) {
     KillTimer(hwnd_, respawn_timer_id_);
@@ -361,6 +394,7 @@ void HostController::beam_did_exit() {
     if (config_.recovery_after > 0 && startup_failures_ >= config_.recovery_after &&
         config_.recovery_script) {
       fprintf(stderr, "edw: startup crash limit reached; running recovery script\n");
+      set_splash_status(L"Repairing");
       beamcli::run_recover(config_);
       startup_failures_ = 0;
     }
@@ -369,9 +403,11 @@ void HostController::beam_did_exit() {
   if (config_.restart_max_attempts > 0 &&
       beam_restart_attempts_ >= config_.restart_max_attempts) {
     fprintf(stderr, "edw: beam exited; restart limit reached, terminating host\n");
+    dismiss_splash();
     PostQuitMessage(1);
     return;
   }
+  set_splash_status(L"Restarting");
   schedule_beam_respawn();
 }
 
@@ -409,6 +445,9 @@ std::string HostController::next_id(const std::string& prefix) {
 }
 
 void HostController::spawn_beam() {
+  if (splash_enabled() && windows_.empty()) {
+    set_splash_status(L"Starting app");
+  }
   auto root = config_.resources_root();
   std::string beam_dir =
       config_.beam_path
@@ -522,6 +561,9 @@ void HostController::spawn_beam() {
   }
   env["EDW_PORT"] = std::to_string(server_.port());
   env["EDW_HOST"] = config_.host;
+  if (config_.app_user_model_id && !config_.app_user_model_id->empty()) {
+    env["EDW_APP_USER_MODEL_ID"] = *config_.app_user_model_id;
+  }
   for (auto& [k, v] : config_.extra_env) env[k] = v;
   if (env.find("RELEASE_DISTRIBUTION") == env.end()) {
     env["RELEASE_DISTRIBUTION"] = "none";
@@ -769,6 +811,7 @@ jsonutil::Json HostController::window_open(const jsonutil::Json& params) {
   win->show();
   webviews_[webview_id] = window_id;
   windows_[window_id] = std::move(win);
+  dismiss_splash();
   return jsonutil::Json{{"window_id", window_id}, {"webview_id", webview_id}};
 }
 

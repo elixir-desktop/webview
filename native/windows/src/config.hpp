@@ -36,6 +36,12 @@ struct HostConfig {
   std::vector<std::string> forwarded_argv;
   Instances instances = Instances::Multi;
   std::optional<std::string> instance_id;
+  // Optional path to a splash logo (PNG/ICO). Relative paths resolve against
+  // resources_root(). When unset, the splash falls back to the PE/module icon.
+  std::optional<std::string> splash_icon;
+  // Shared with BEAM (EDW_APP_USER_MODEL_ID) so Task Manager groups both processes.
+  // From ini [windows] app_user_model_id or --edw-app-user-model-id=.
+  std::optional<std::string> app_user_model_id;
 
   static HostConfig parse(int argc, char** argv);
 
