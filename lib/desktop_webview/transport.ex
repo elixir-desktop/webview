@@ -14,15 +14,23 @@ defmodule DesktopWebview.Transport do
   # Transport down with them, or the next subscribe races a dead name.
   def ensure_started do
     case Process.whereis(@name) do
-      pid when is_pid(pid) and Process.alive?(pid) ->
-        :ok
-
-      _ ->
-        case GenServer.start(__MODULE__, [], name: @name) do
-          {:ok, _} -> :ok
-          {:error, {:already_started, pid}} ->
-            if Process.alive?(pid), do: :ok, else: ensure_started()
+      pid when is_pid(pid) ->
+        if Process.alive?(pid) do
+          :ok
+        else
+          start_unlinked()
         end
+
+      nil ->
+        start_unlinked()
+    end
+  end
+
+  defp start_unlinked do
+    case GenServer.start(__MODULE__, [], name: @name) do
+      {:ok, _} -> :ok
+      {:error, {:already_started, pid}} ->
+        if Process.alive?(pid), do: :ok, else: start_unlinked()
     end
   end
 
