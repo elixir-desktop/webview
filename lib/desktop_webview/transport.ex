@@ -10,14 +10,19 @@ defmodule DesktopWebview.Transport do
     GenServer.start_link(__MODULE__, opts, name: @name)
   end
 
+  # Start unlinked: EventBridge (and unit tests that kill it) must not take
+  # Transport down with them, or the next subscribe races a dead name.
   def ensure_started do
     case Process.whereis(@name) do
-      nil ->
-        {:ok, _} = start_link([])
+      pid when is_pid(pid) and Process.alive?(pid) ->
         :ok
 
       _ ->
-        :ok
+        case GenServer.start(__MODULE__, [], name: @name) do
+          {:ok, _} -> :ok
+          {:error, {:already_started, pid}} ->
+            if Process.alive?(pid), do: :ok, else: ensure_started()
+        end
     end
   end
 
