@@ -42,17 +42,15 @@ defmodule DesktopWebview.EventBridge do
 
   @impl true
   def init(_opts) do
-    Transport.ensure_started()
-    Transport.subscribe(self())
-
     {:ok,
-     %{
+     attach_transport(%{
        windows: %{},
        menus: %{},
        notifications: %{},
        pending_open: [],
-       open_wait: 0
-     }}
+       open_wait: 0,
+       transport_ref: nil
+     })}
   end
 
   @impl true
@@ -80,6 +78,12 @@ defmodule DesktopWebview.EventBridge do
     {:noreply, flush_open_urls(state)}
   end
 
+  # Transport is started unlinked (so EventBridge test kills do not race a dead
+  # Transport). Monitor it and re-subscribe after a crash so host events resume.
+  def handle_info({:DOWN, ref, :process, _pid, _}, %{transport_ref: ref} = state) do
+    {:noreply, attach_transport(%{state | transport_ref: nil})}
+  end
+
   def handle_info({:DOWN, _ref, :process, pid, _}, state) do
     {:noreply,
      %{
@@ -91,6 +95,14 @@ defmodule DesktopWebview.EventBridge do
   end
 
   def handle_info(_other, state), do: {:noreply, state}
+
+  defp attach_transport(state) do
+    if state.transport_ref, do: Process.demonitor(state.transport_ref, [:flush])
+    Transport.ensure_started()
+    transport = Process.whereis(Transport)
+    :ok = Transport.subscribe(self())
+    %{state | transport_ref: Process.monitor(transport)}
+  end
 
   defp dispatch("event.window.close_requested", %{"window_id" => wid}, state) do
     if pid = Map.get(state.windows, wid), do: GenServer.cast(pid, :close_window)

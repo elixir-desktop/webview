@@ -60,4 +60,27 @@ defmodule DesktopWebview.EventBridgeTest do
     Process.sleep(50)
     assert Process.alive?(bridge)
   end
+
+  test "resubscribes after Transport crash", %{bridge: bridge} do
+    alias DesktopWebview.Transport
+
+    EventBridge.register_window("w1", self())
+    transport = Process.whereis(Transport)
+    assert is_pid(transport)
+    Process.exit(transport, :kill)
+
+    # Wait for EventBridge to see DOWN and attach a new Transport.
+    :ok =
+      Enum.reduce_while(1..50, :error, fn _, _ ->
+        case Process.whereis(Transport) do
+          pid when is_pid(pid) and pid != transport -> {:halt, :ok}
+          _ ->
+            Process.sleep(10)
+            {:cont, :error}
+        end
+      end)
+
+    send(bridge, {:edw_event, "event.window.close_requested", %{"window_id" => "w1"}})
+    assert_receive {:"$gen_cast", :close_window}, 500
+  end
 end
