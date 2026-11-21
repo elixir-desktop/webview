@@ -174,7 +174,13 @@ void SplashWindow::paint(HWND hwnd) {
     graphics.SetInterpolationMode(Gdiplus::InterpolationModeHighQualityBicubic);
     graphics.SetPixelOffsetMode(Gdiplus::PixelOffsetModeHighQuality);
     graphics.SetSmoothingMode(Gdiplus::SmoothingModeHighQuality);
-    graphics.DrawImage(image_, icon_x, icon_y, kIconSize, kIconSize);
+    // HQ bicubic reads past the source edge. TileFlipXY repeats those texels
+    // so the sample is not transparent black (dark halo on the gray splash).
+    Gdiplus::ImageAttributes attrs;
+    attrs.SetWrapMode(Gdiplus::WrapModeTileFlipXY);
+    const Gdiplus::Rect dest(icon_x, icon_y, kIconSize, kIconSize);
+    graphics.DrawImage(image_, dest, 0, 0, static_cast<INT>(image_->GetWidth()),
+                       static_cast<INT>(image_->GetHeight()), Gdiplus::UnitPixel, &attrs);
   } else if (icon_) {
     DrawIconEx(hdc, icon_x, icon_y, icon_, kIconSize, kIconSize, 0, nullptr, DI_NORMAL);
   }
