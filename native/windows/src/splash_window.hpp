@@ -2,6 +2,8 @@
 
 #include "win_prefix.hpp"
 
+#include <gdiplus.h>
+
 #include <optional>
 #include <string>
 
@@ -27,8 +29,12 @@ class SplashWindow {
   LRESULT on_message(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
   void paint(HWND hwnd);
   void load_icon(const std::optional<std::wstring>& icon_path);
+  void clear_logo();
 
   HWND hwnd_ = nullptr;
+  // Prefer GDI+ image for PNG/JPEG (sharp DrawImage). Fall back to HICON for
+  // .ico / embedded PE icons.
+  Gdiplus::Image* image_ = nullptr;
   HICON icon_ = nullptr;
   bool owns_icon_ = false;
   std::wstring status_;

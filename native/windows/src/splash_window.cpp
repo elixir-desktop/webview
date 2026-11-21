@@ -14,6 +14,21 @@ HBRUSH splash_bg_brush() {
   if (!g_bg_brush) g_bg_brush = CreateSolidBrush(kSplashBg);
   return g_bg_brush;
 }
+
+bool ensure_gdiplus() {
+  static ULONG_PTR token = 0;
+  static bool ready = false;
+  if (ready) return true;
+  Gdiplus::GdiplusStartupInput input;
+  ready = Gdiplus::GdiplusStartup(&token, &input, nullptr) == Gdiplus::Ok;
+  return ready;
+}
+
+bool is_raster_image_path(const std::wstring& path) {
+  return ends_with_ignore_case(path, L".png") || ends_with_ignore_case(path, L".jpg") ||
+         ends_with_ignore_case(path, L".jpeg") || ends_with_ignore_case(path, L".bmp") ||
+         ends_with_ignore_case(path, L".gif");
+}
 }  // namespace
 
 void SplashWindow::register_class() {
@@ -37,18 +52,36 @@ SplashWindow::SplashWindow() = default;
 
 SplashWindow::~SplashWindow() { dismiss(); }
 
-void SplashWindow::load_icon(const std::optional<std::wstring>& icon_path) {
+void SplashWindow::clear_logo() {
+  if (image_) {
+    delete image_;
+    image_ = nullptr;
+  }
   if (icon_ && owns_icon_) DestroyIcon(icon_);
   icon_ = nullptr;
   owns_icon_ = false;
+}
+
+void SplashWindow::load_icon(const std::optional<std::wstring>& icon_path) {
+  clear_logo();
 
   if (icon_path && !icon_path->empty()) {
+    if (is_raster_image_path(*icon_path) && ensure_gdiplus()) {
+      auto* img = new Gdiplus::Image(icon_path->c_str());
+      if (img->GetLastStatus() == Gdiplus::Ok) {
+        image_ = img;
+        return;
+      }
+      delete img;
+    }
+
     icon_ = load_hicon_from_file(*icon_path);
     if (icon_) {
       owns_icon_ = true;
       return;
     }
   }
+
   icon_ = extract_module_icon();
   owns_icon_ = icon_ != nullptr;
 }
@@ -92,9 +125,7 @@ void SplashWindow::dismiss() {
     DestroyWindow(hwnd_);
     hwnd_ = nullptr;
   }
-  if (icon_ && owns_icon_) DestroyIcon(icon_);
-  icon_ = nullptr;
-  owns_icon_ = false;
+  clear_logo();
 }
 
 LRESULT CALLBACK SplashWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
@@ -135,9 +166,16 @@ void SplashWindow::paint(HWND hwnd) {
   GetClientRect(hwnd, &client);
   FillRect(hdc, &client, splash_bg_brush());
 
-  if (icon_) {
-    int icon_x = (client.right - kIconSize) / 2;
-    int icon_y = 28;
+  const int icon_x = (client.right - kIconSize) / 2;
+  const int icon_y = 28;
+
+  if (image_) {
+    Gdiplus::Graphics graphics(hdc);
+    graphics.SetInterpolationMode(Gdiplus::InterpolationModeHighQualityBicubic);
+    graphics.SetPixelOffsetMode(Gdiplus::PixelOffsetModeHighQuality);
+    graphics.SetSmoothingMode(Gdiplus::SmoothingModeHighQuality);
+    graphics.DrawImage(image_, icon_x, icon_y, kIconSize, kIconSize);
+  } else if (icon_) {
     DrawIconEx(hdc, icon_x, icon_y, icon_, kIconSize, kIconSize, 0, nullptr, DI_NORMAL);
   }
 
